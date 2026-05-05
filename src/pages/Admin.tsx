@@ -127,10 +127,9 @@ const MatchBuilder = () => {
   const updateScore = async (id: string, h: number, a: number) => {
     await supabase.from("matches").update({ home_score: h, away_score: a }).eq("id", id); await load();
   };
-  const setStatus = async (id: string, status: string) => {
-    await supabase.from("matches").update({ status }).eq("id", id); await load();
+  const setLive = async (id: string) => {
+    await supabase.from("matches").update({ status: "live" as const }).eq("id", id); await load();
   };
-  const setLive = (id: string) => setStatus(id, "live");
   const endMatch = async (m: any) => {
     const winner = m.home_score > m.away_score ? m.home_team_id : m.away_score > m.home_score ? m.away_team_id : null;
     await supabase.from("matches").update({ status: "ended", winner_team_id: winner }).eq("id", m.id);
