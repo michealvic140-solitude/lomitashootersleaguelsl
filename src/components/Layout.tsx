@@ -31,6 +31,7 @@ export const Layout = ({ children }: { children: ReactNode }) => {
             <Link to="/leaderboard"><Button variant="ghost" size="sm">Leaderboard</Button></Link>
             {user && <Link to="/chat"><Button variant="ghost" size="sm"><MessageSquare className="h-4 w-4" />Chat</Button></Link>}
             {user && <Link to="/dashboard"><Button variant="ghost" size="sm">Dashboard</Button></Link>}
+            {user && <Link to="/support"><Button variant="ghost" size="sm">Support</Button></Link>}
             {isAdmin && <Link to="/admin"><Button variant="ghost" size="sm" className="text-red-300"><Shield className="h-4 w-4" />Admin</Button></Link>}
           </nav>
 
