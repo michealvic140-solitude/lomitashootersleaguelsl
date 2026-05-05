@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Shield, Users, Crosshair, Megaphone, Gift, Settings, FileText } from "lucide-react";
+import { Shield, Users, Crosshair, Megaphone, Gift, Settings, FileText, Coins, Calculator } from "lucide-react";
 import { useAuth, AppRole, ROLE_COLORS, ROLE_LABELS } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
@@ -105,6 +105,8 @@ const MatchBuilder = () => {
   const [name, setName] = useState(""); const [home, setHome] = useState(""); const [away, setAway] = useState("");
   const [loc, setLoc] = useState(""); const [start, setStart] = useState("");
   const [newTeam, setNewTeam] = useState("");
+  const [newTeamGang, setNewTeamGang] = useState<"G" | "F" | "">("");
+  const [newTeamLogo, setNewTeamLogo] = useState<File | null>(null);
 
   const load = async () => {
     const { data: t } = await supabase.from("teams").select("*").order("created_at", { ascending: false });
@@ -116,8 +118,15 @@ const MatchBuilder = () => {
 
   const createTeam = async () => {
     if (!newTeam.trim()) return;
-    await supabase.from("teams").insert({ name: newTeam });
-    setNewTeam(""); await load();
+    let logo_url: string | null = null;
+    if (newTeamLogo) {
+      const path = `teams/${Date.now()}_${newTeamLogo.name}`;
+      const { error } = await supabase.storage.from("team-logos").upload(path, newTeamLogo);
+      if (error) return toast.error(error.message);
+      logo_url = supabase.storage.from("team-logos").getPublicUrl(path).data.publicUrl;
+    }
+    await supabase.from("teams").insert({ name: newTeam, gang_type: newTeamGang || null, logo_url });
+    setNewTeam(""); setNewTeamGang(""); setNewTeamLogo(null); await load(); toast.success("Team added");
   };
   const createMatch = async () => {
     if (!name || !home || !away || !start) return toast.error("Fill all fields");
@@ -157,8 +166,27 @@ const MatchBuilder = () => {
   return (
     <div className="space-y-4">
       <Card className="glass p-4 space-y-2">
-        <h3 className="font-bold">Quick add team</h3>
-        <div className="flex gap-2"><Input placeholder="Team name" value={newTeam} onChange={(e) => setNewTeam(e.target.value)} /><Button onClick={createTeam} className="btn-luxury">Add</Button></div>
+        <h3 className="font-bold">Add team</h3>
+        <div className="grid md:grid-cols-4 gap-2">
+          <Input placeholder="Team name" value={newTeam} onChange={(e) => setNewTeam(e.target.value)} />
+          <Select value={newTeamGang} onValueChange={(v) => setNewTeamGang(v as any)}>
+            <SelectTrigger><SelectValue placeholder="Type" /></SelectTrigger>
+            <SelectContent><SelectItem value="G">G - Gang</SelectItem><SelectItem value="F">F - Faction</SelectItem></SelectContent>
+          </Select>
+          <Input type="file" accept="image/*" onChange={(e) => setNewTeamLogo(e.target.files?.[0] ?? null)} />
+          <Button onClick={createTeam} className="btn-luxury">Add team</Button>
+        </div>
+        <div className="grid md:grid-cols-3 gap-2 mt-3">
+          {teams.map((t) => (
+            <div key={t.id} className="glass p-2 rounded flex items-center gap-2">
+              {t.logo_url ? <img src={t.logo_url} className="h-10 w-10 rounded-full object-cover" alt="" /> : <Crosshair className="h-6 w-6 text-primary" />}
+              <div className="flex-1 min-w-0">
+                <div className="text-sm font-bold truncate">{t.name} {t.gang_type && <span className="text-xs text-gold">({t.gang_type})</span>}</div>
+                <PlayerEditor teamId={t.id} />
+              </div>
+            </div>
+          ))}
+        </div>
       </Card>
       <Card className="glass p-4 space-y-2">
         <h3 className="font-bold">Create match</h3>
@@ -239,6 +267,31 @@ const AddOdd = ({ marketId, onDone }: { marketId: string; onDone: () => void }) 
   );
 };
 
+const PlayerEditor = ({ teamId }: { teamId: string }) => {
+  const [open, setOpen] = useState(false);
+  const [players, setPlayers] = useState<any[]>([]);
+  const [name, setName] = useState(""); const [pos, setPos] = useState(""); const [sub, setSub] = useState(false);
+  const load = () => supabase.from("players").select("*").eq("team_id", teamId).then(({ data }) => setPlayers(data ?? []));
+  useEffect(() => { if (open) load(); }, [open, teamId]);
+  if (!open) return <button className="text-[10px] text-gold underline" onClick={() => setOpen(true)}>Manage squad</button>;
+  return (
+    <div className="mt-1 space-y-1">
+      {players.map((p) => (
+        <div key={p.id} className="flex items-center justify-between text-[11px]">
+          <span>{p.name}{p.position && ` · ${p.position}`}{p.is_substitute && " (sub)"}</span>
+          <button className="text-destructive" onClick={async () => { await supabase.from("players").delete().eq("id", p.id); load(); }}>×</button>
+        </div>
+      ))}
+      <div className="flex gap-1">
+        <Input className="h-6 text-[11px]" placeholder="Name" value={name} onChange={(e) => setName(e.target.value)} />
+        <Input className="h-6 text-[11px] w-20" placeholder="Pos" value={pos} onChange={(e) => setPos(e.target.value)} />
+        <label className="text-[10px] flex items-center gap-1"><input type="checkbox" checked={sub} onChange={(e) => setSub(e.target.checked)} />sub</label>
+        <Button size="sm" className="h-6 text-[10px]" onClick={async () => { if (name) { await supabase.from("players").insert({ team_id: teamId, name, position: pos || null, is_substitute: sub }); setName(""); setPos(""); setSub(false); load(); } }}>+</Button>
+      </div>
+    </div>
+  );
+};
+
 const Promos = () => {
   const [items, setItems] = useState<any[]>([]);
   const [code, setCode] = useState(""); const [amount, setAmount] = useState(""); const [limit, setLimit] = useState("1");
@@ -290,6 +343,69 @@ const Content = () => {
   );
 };
 
+const TokenRequests = () => {
+  const { user: me } = useAuth();
+  const [items, setItems] = useState<any[]>([]);
+  const load = () => supabase.from("token_requests").select("*,profile:profiles(full_name,email,token_balance)").order("created_at", { ascending: false }).then(({ data }) => setItems(data ?? []));
+  useEffect(() => { load(); }, []);
+  const decide = async (r: any, approve: boolean) => {
+    const note = prompt(approve ? "Approval note (optional)" : "Reason for denial") || "";
+    await supabase.from("token_requests").update({ status: approve ? "approved" : "denied", reviewed_by: me?.id, reviewed_at: new Date().toISOString(), review_note: note }).eq("id", r.id);
+    if (approve) {
+      await supabase.from("profiles").update({ token_balance: (r.profile?.token_balance ?? 0) + Number(r.amount) }).eq("id", r.user_id);
+    }
+    await supabase.from("notifications").insert({ user_id: r.user_id, title: `Token request ${approve ? "approved" : "denied"}`, body: `${r.amount} tokens · ${note}` });
+    await supabase.from("audit_logs").insert({ actor_id: me?.id, action: approve ? "tokens_request_approve" : "tokens_request_deny", target_type: "user", target_id: r.user_id, metadata: { amount: r.amount, note } });
+    load();
+  };
+  return (
+    <div className="space-y-2">
+      {items.length === 0 && <p className="text-sm text-muted-foreground">No requests.</p>}
+      {items.map((r) => (
+        <Card key={r.id} className="glass p-3">
+          <div className="flex justify-between flex-wrap gap-2">
+            <div>
+              <div className="font-bold">{r.profile?.full_name} · <span className="text-gold">+{r.amount}</span></div>
+              <div className="text-xs text-muted-foreground">{r.profile?.email} · {new Date(r.created_at).toLocaleString()}</div>
+              {r.note && <div className="text-xs mt-1">{r.note}</div>}
+              {r.proof_image_url && <a href={r.proof_image_url} target="_blank" rel="noreferrer"><img src={r.proof_image_url} className="mt-2 max-w-[140px] rounded" alt="" /></a>}
+            </div>
+            <div className="flex flex-col gap-1">
+              <Badge variant="outline">{r.status}</Badge>
+              {r.status === "pending" && <>
+                <Button size="sm" onClick={() => decide(r, true)} className="btn-luxury">Approve</Button>
+                <Button size="sm" variant="destructive" onClick={() => decide(r, false)}>Deny</Button>
+              </>}
+            </div>
+          </div>
+        </Card>
+      ))}
+    </div>
+  );
+};
+
+const OddsCalculator = () => {
+  const [legs, setLegs] = useState<string[]>(["2.00", "1.50"]);
+  const [stake, setStake] = useState("1000");
+  const total = legs.reduce((acc, v) => acc * (parseFloat(v) || 1), 1);
+  const payout = Math.min(60_000_000, Math.round((parseFloat(stake) || 0) * total));
+  return (
+    <Card className="glass p-4 space-y-2">
+      <h3 className="font-bold flex items-center gap-2"><Calculator className="h-4 w-4" />Odds Calculator</h3>
+      {legs.map((l, i) => (
+        <div key={i} className="flex gap-2">
+          <Input type="number" step="0.01" value={l} onChange={(e) => { const c = [...legs]; c[i] = e.target.value; setLegs(c); }} />
+          <Button variant="outline" size="sm" onClick={() => setLegs(legs.filter((_, j) => j !== i))}>×</Button>
+        </div>
+      ))}
+      <Button variant="outline" size="sm" onClick={() => setLegs([...legs, "2.00"])}>+ Add leg</Button>
+      <div><Label>Stake</Label><Input type="number" value={stake} onChange={(e) => setStake(e.target.value)} /></div>
+      <div className="flex justify-between text-sm"><span>Total odds</span><span className="text-gold font-bold">{total.toFixed(2)}</span></div>
+      <div className="flex justify-between text-sm"><span>Payout (capped 60M)</span><span className="text-gold font-bold">{payout.toLocaleString()}</span></div>
+    </Card>
+  );
+};
+
 const SettingsTab = () => {
   const [s, setS] = useState<any>(null);
   useEffect(() => { supabase.from("app_settings").select("*").eq("id", 1).single().then(({ data }) => setS(data)); }, []);
@@ -312,13 +428,31 @@ const SettingsTab = () => {
 
 const Logs = () => {
   const [logs, setLogs] = useState<any[]>([]);
-  useEffect(() => { supabase.from("audit_logs").select("*").order("created_at", { ascending: false }).limit(100).then(({ data }) => setLogs(data ?? [])); }, []);
+  const [profiles, setProfiles] = useState<Record<string, string>>({});
+  useEffect(() => {
+    supabase.from("audit_logs").select("*").order("created_at", { ascending: false }).limit(200).then(async ({ data }) => {
+      setLogs(data ?? []);
+      const ids = [...new Set([...(data ?? []).map((l: any) => l.actor_id), ...(data ?? []).map((l: any) => l.target_id)].filter(Boolean))];
+      if (ids.length) {
+        const { data: ps } = await supabase.from("profiles").select("id,full_name").in("id", ids as string[]);
+        const m: Record<string, string> = {};
+        (ps ?? []).forEach((p: any) => { m[p.id] = p.full_name; });
+        setProfiles(m);
+      }
+    });
+  }, []);
   return (
     <div className="space-y-1">
       {logs.map((l) => (
-        <Card key={l.id} className="glass p-2 text-xs flex justify-between">
-          <span><b>{l.action}</b> · {l.target_type}/{l.target_id?.slice(0, 8)}</span>
-          <span className="text-muted-foreground">{new Date(l.created_at).toLocaleString()}</span>
+        <Card key={l.id} className="glass p-3 text-xs">
+          <div className="flex justify-between flex-wrap gap-2">
+            <div>
+              <div><span className="text-gold font-bold">{l.action}</span> by <b>{profiles[l.actor_id] ?? l.actor_id?.slice(0, 8) ?? "system"}</b></div>
+              {l.target_id && <div className="text-muted-foreground">Target: {l.target_type}/{profiles[l.target_id] ?? l.target_id?.slice(0, 8)}</div>}
+              {l.metadata && <pre className="text-[10px] text-muted-foreground mt-1 overflow-x-auto">{JSON.stringify(l.metadata, null, 2)}</pre>}
+            </div>
+            <span className="text-muted-foreground whitespace-nowrap">{new Date(l.created_at).toLocaleString()}</span>
+          </div>
         </Card>
       ))}
     </div>
@@ -339,6 +473,8 @@ const Admin = () => {
             <TabsTrigger value="matches"><Crosshair className="h-4 w-4 mr-1" />Matches</TabsTrigger>
             <TabsTrigger value="content"><Megaphone className="h-4 w-4 mr-1" />Announcements</TabsTrigger>
             <TabsTrigger value="promos"><Gift className="h-4 w-4 mr-1" />Promos</TabsTrigger>
+            <TabsTrigger value="tokens"><Coins className="h-4 w-4 mr-1" />Token Requests</TabsTrigger>
+            <TabsTrigger value="calc"><Calculator className="h-4 w-4 mr-1" />Calculator</TabsTrigger>
             <TabsTrigger value="settings"><Settings className="h-4 w-4 mr-1" />Settings</TabsTrigger>
             <TabsTrigger value="logs"><FileText className="h-4 w-4 mr-1" />Audit</TabsTrigger>
           </TabsList>
@@ -346,6 +482,8 @@ const Admin = () => {
           <TabsContent value="matches"><MatchBuilder /></TabsContent>
           <TabsContent value="content"><Content /></TabsContent>
           <TabsContent value="promos"><Promos /></TabsContent>
+          <TabsContent value="tokens"><TokenRequests /></TabsContent>
+          <TabsContent value="calc"><OddsCalculator /></TabsContent>
           <TabsContent value="settings"><SettingsTab /></TabsContent>
           <TabsContent value="logs"><Logs /></TabsContent>
         </Tabs>

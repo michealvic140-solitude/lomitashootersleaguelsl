@@ -4,7 +4,7 @@ import { Layout } from "@/components/Layout";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Crosshair, Copy, Share2 } from "lucide-react";
+import { Crosshair, Copy } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
@@ -24,14 +24,15 @@ const TicketSlip = () => {
 
   if (!bet) return <Layout><div className="container py-12 text-muted-foreground">Loading...</div></Layout>;
 
-  const cashout = async (full: boolean) => {
+  const cashout = async () => {
     if (!user || !profile) return;
+    if (bet.status !== "won") { toast.error("You can only cash out a winning ticket."); return; }
     setLoading(true);
-    const amount = full ? Math.round(bet.stake * 0.9) : Math.round(bet.stake * 0.5);
+    const amount = Math.min(60_000_000, Number(bet.potential_payout));
     await supabase.from("bets").update({ status: "cashed_out", cashout_amount: amount, settled_at: new Date().toISOString() }).eq("id", bet.id);
     await supabase.from("profiles").update({ token_balance: profile.token_balance + amount }).eq("id", user.id);
     await supabase.from("notifications").insert({ user_id: user.id, title: "Cashout successful", body: `+${amount} tokens` });
-    await refresh(); load(); setLoading(false); toast.success(`Cashed out ${amount}`);
+    await refresh(); load(); setLoading(false); toast.success(`Cashed out ${amount.toLocaleString()} tokens`);
   };
 
   const share = () => {
@@ -67,13 +68,15 @@ const TicketSlip = () => {
               </div>
             ))}
           </div>
-          <div className="flex gap-2 mt-6">
-            <Button variant="outline" onClick={share} className="flex-1"><Copy className="h-4 w-4" />Share</Button>
+          <div className="flex gap-2 mt-6 flex-wrap">
+            <Button variant="outline" onClick={share} className="flex-1"><Copy className="h-4 w-4" />Share Booking Code</Button>
+            {bet.status === "won" && bet.user_id === user?.id && (
+              <Button onClick={cashout} disabled={loading} className="btn-luxury flex-1">Claim winnings</Button>
+            )}
             {bet.status === "open" && bet.user_id === user?.id && (
-              <>
-                <Button onClick={() => cashout(false)} disabled={loading} variant="outline" className="flex-1">Partial cashout</Button>
-                <Button onClick={() => cashout(true)} disabled={loading} className="btn-luxury flex-1">Full cashout</Button>
-              </>
+              <div className="w-full text-xs text-center text-muted-foreground p-2 bg-secondary/40 rounded">
+                Cashout is locked until the ticket settles. If it wins you'll claim the full payout; if it loses, the stake is forfeited.
+              </div>
             )}
           </div>
           <p className="text-[10px] text-center text-muted-foreground mt-4">Virtual tokens only · No real money</p>

@@ -5,7 +5,7 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Coins, Trophy, X, Ticket, Gift } from "lucide-react";
+import { Coins, Ticket, Gift, Copy, Upload } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
@@ -14,6 +14,12 @@ const Dashboard = () => {
   const { user, profile, loading, refresh } = useAuth();
   const [bets, setBets] = useState<any[]>([]);
   const [promoCode, setPromoCode] = useState("");
+  const [bookingCode, setBookingCode] = useState("");
+  const [stake, setStake] = useState("");
+  const [previewBet, setPreviewBet] = useState<any | null>(null);
+  const [reqAmount, setReqAmount] = useState("");
+  const [reqNote, setReqNote] = useState("");
+  const [reqFile, setReqFile] = useState<File | null>(null);
 
   useEffect(() => {
     if (!user) return;
@@ -47,6 +53,54 @@ const Dashboard = () => {
     toast.success(`+${promo.amount} tokens!`);
   };
 
+  const lookup = async () => {
+    const code = bookingCode.trim().toUpperCase();
+    if (!code) return;
+    const { data } = await supabase.from("bets").select("*,bet_selections(*,match:matches(name,status))").eq("booking_code", code).maybeSingle();
+    if (!data) { toast.error("Booking code not found"); setPreviewBet(null); return; }
+    setPreviewBet(data);
+  };
+
+  const cloneBet = async () => {
+    if (!previewBet || !user || !profile) return;
+    const stakeNum = Math.max(0, parseInt(stake || "0", 10));
+    if (stakeNum <= 0) return toast.error("Enter stake");
+    if (stakeNum > profile.token_balance) return toast.error("Insufficient tokens");
+    const odds = Number(previewBet.total_odds);
+    const payout = Math.min(60_000_000, Math.round(stakeNum * odds));
+    const { data: bet, error } = await supabase.from("bets").insert({
+      user_id: user.id, stake: stakeNum, total_odds: odds, potential_payout: payout,
+    }).select().single();
+    if (error || !bet) return toast.error(error?.message ?? "Failed");
+    await supabase.from("bet_selections").insert(
+      previewBet.bet_selections.map((s: any) => ({
+        bet_id: bet.id, match_id: s.match_id, market_id: s.market_id,
+        odd_id: s.odd_id, locked_odds: s.locked_odds, selection_label: s.selection_label,
+      })),
+    );
+    await supabase.from("profiles").update({ token_balance: profile.token_balance - stakeNum }).eq("id", user.id);
+    await refresh();
+    toast.success(`Bet cloned! Code ${bet.booking_code}`);
+    setBookingCode(""); setStake(""); setPreviewBet(null);
+  };
+
+  const submitTokenRequest = async () => {
+    const amt = parseInt(reqAmount || "0", 10);
+    if (!amt || amt <= 0) return toast.error("Enter amount");
+    let proof_image_url: string | null = null;
+    if (reqFile && user) {
+      const path = `${user.id}/${Date.now()}_${reqFile.name}`;
+      const { error } = await supabase.storage.from("token-proofs").upload(path, reqFile);
+      if (error) return toast.error(error.message);
+      proof_image_url = supabase.storage.from("token-proofs").getPublicUrl(path).data.publicUrl;
+    }
+    if (!user) return;
+    const { error } = await supabase.from("token_requests").insert({ user_id: user.id, amount: amt, note: reqNote || null, proof_image_url });
+    if (error) return toast.error(error.message);
+    toast.success("Token request submitted");
+    setReqAmount(""); setReqNote(""); setReqFile(null);
+  };
+
   return (
     <Layout>
       <div className="container py-8 space-y-6">
@@ -69,7 +123,7 @@ const Dashboard = () => {
           </Card>
         </div>
 
-        <div className="grid md:grid-cols-3 gap-4">
+        <div className="grid md:grid-cols-2 gap-4">
           <Card className="glass p-5">
             <h3 className="font-bold mb-3 flex items-center gap-2"><Gift className="h-4 w-4 text-primary" />Redeem Promo Code</h3>
             <div className="flex gap-2">
@@ -77,15 +131,37 @@ const Dashboard = () => {
               <Button onClick={redeem} className="btn-luxury">Redeem</Button>
             </div>
           </Card>
-          <Card className="glass p-5 opacity-60">
-            <h3 className="font-bold mb-1">Deposit</h3>
-            <p className="text-sm text-muted-foreground">Coming soon</p>
-          </Card>
-          <Card className="glass p-5 opacity-60">
-            <h3 className="font-bold mb-1">Withdrawal</h3>
-            <p className="text-sm text-muted-foreground">Coming soon</p>
+          <Card className="glass p-5">
+            <h3 className="font-bold mb-3 flex items-center gap-2"><Copy className="h-4 w-4 text-primary" />Play a friend's booking code</h3>
+            <div className="flex gap-2">
+              <Input value={bookingCode} onChange={(e) => setBookingCode(e.target.value.toUpperCase())} placeholder="BOOKING CODE" />
+              <Button onClick={lookup} variant="outline">Lookup</Button>
+            </div>
+            {previewBet && (
+              <div className="mt-3 p-3 bg-secondary/40 rounded text-xs space-y-1">
+                <div className="font-bold text-gold">Odds {Number(previewBet.total_odds).toFixed(2)} · {previewBet.bet_selections.length} selection(s)</div>
+                {previewBet.bet_selections.map((s: any) => (
+                  <div key={s.id}>{s.match?.name} — {s.selection_label} @ {Number(s.locked_odds).toFixed(2)}</div>
+                ))}
+                <div className="flex gap-2 mt-2">
+                  <Input value={stake} onChange={(e) => setStake(e.target.value)} placeholder="Your stake" type="number" />
+                  <Button onClick={cloneBet} className="btn-luxury">Place</Button>
+                </div>
+              </div>
+            )}
           </Card>
         </div>
+
+        <Card className="glass p-5">
+          <h3 className="font-bold mb-3 flex items-center gap-2"><Upload className="h-4 w-4 text-primary" />Request token top-up</h3>
+          <div className="grid md:grid-cols-4 gap-2">
+            <Input placeholder="Amount" type="number" value={reqAmount} onChange={(e) => setReqAmount(e.target.value)} />
+            <Input placeholder="Note (optional)" value={reqNote} onChange={(e) => setReqNote(e.target.value)} />
+            <Input type="file" accept="image/*" onChange={(e) => setReqFile(e.target.files?.[0] ?? null)} />
+            <Button onClick={submitTokenRequest} className="btn-luxury">Submit request</Button>
+          </div>
+          <p className="text-[11px] text-muted-foreground mt-2">Admins will review your request and credit your account if approved.</p>
+        </Card>
 
         <Card className="glass p-5">
           <h3 className="font-bold mb-4 flex items-center gap-2"><Ticket className="h-4 w-4 text-primary" />My Bets</h3>
