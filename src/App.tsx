@@ -4,6 +4,7 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider } from "@/contexts/AuthContext";
+import { BetSlipProvider } from "@/contexts/BetSlipContext";
 import Index from "./pages/Index.tsx";
 import Login from "./pages/Login.tsx";
 import Register from "./pages/Register.tsx";
@@ -29,6 +30,7 @@ const App = () => (
       <Toaster />
       <Sonner />
       <AuthProvider>
+        <BetSlipProvider>
         <BrowserRouter>
           <Routes>
             <Route path="/" element={<Index />} />
@@ -50,6 +52,7 @@ const App = () => (
             <Route path="*" element={<NotFound />} />
           </Routes>
         </BrowserRouter>
+        </BetSlipProvider>
       </AuthProvider>
     </TooltipProvider>
   </QueryClientProvider>
