@@ -5,7 +5,7 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Coins, Ticket, Gift, Copy } from "lucide-react";
+import { Coins, Ticket, Gift, Copy, Upload } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
@@ -17,6 +17,9 @@ const Dashboard = () => {
   const [bookingCode, setBookingCode] = useState("");
   const [stake, setStake] = useState("");
   const [previewBet, setPreviewBet] = useState<any | null>(null);
+  const [reqAmount, setReqAmount] = useState("");
+  const [reqNote, setReqNote] = useState("");
+  const [reqFile, setReqFile] = useState<File | null>(null);
 
   useEffect(() => {
     if (!user) return;
@@ -81,6 +84,23 @@ const Dashboard = () => {
     setBookingCode(""); setStake(""); setPreviewBet(null);
   };
 
+  const submitTokenRequest = async () => {
+    const amt = parseInt(reqAmount || "0", 10);
+    if (!amt || amt <= 0) return toast.error("Enter amount");
+    let proof_image_url: string | null = null;
+    if (reqFile && user) {
+      const path = `${user.id}/${Date.now()}_${reqFile.name}`;
+      const { error } = await supabase.storage.from("token-proofs").upload(path, reqFile);
+      if (error) return toast.error(error.message);
+      proof_image_url = supabase.storage.from("token-proofs").getPublicUrl(path).data.publicUrl;
+    }
+    if (!user) return;
+    const { error } = await supabase.from("token_requests").insert({ user_id: user.id, amount: amt, note: reqNote || null, proof_image_url });
+    if (error) return toast.error(error.message);
+    toast.success("Token request submitted");
+    setReqAmount(""); setReqNote(""); setReqFile(null);
+  };
+
   return (
     <Layout>
       <div className="container py-8 space-y-6">
@@ -131,6 +151,17 @@ const Dashboard = () => {
             )}
           </Card>
         </div>
+
+        <Card className="glass p-5">
+          <h3 className="font-bold mb-3 flex items-center gap-2"><Upload className="h-4 w-4 text-primary" />Request token top-up</h3>
+          <div className="grid md:grid-cols-4 gap-2">
+            <Input placeholder="Amount" type="number" value={reqAmount} onChange={(e) => setReqAmount(e.target.value)} />
+            <Input placeholder="Note (optional)" value={reqNote} onChange={(e) => setReqNote(e.target.value)} />
+            <Input type="file" accept="image/*" onChange={(e) => setReqFile(e.target.files?.[0] ?? null)} />
+            <Button onClick={submitTokenRequest} className="btn-luxury">Submit request</Button>
+          </div>
+          <p className="text-[11px] text-muted-foreground mt-2">Admins will review your request and credit your account if approved.</p>
+        </Card>
 
         <Card className="glass p-5">
           <h3 className="font-bold mb-4 flex items-center gap-2"><Ticket className="h-4 w-4 text-primary" />My Bets</h3>
