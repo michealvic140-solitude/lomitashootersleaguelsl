@@ -28,7 +28,7 @@ All colors MUST be HSL.
     --muted: 240 10% 14%;
     --muted-foreground: 240 5% 65%;
 
-    --accent: 0 75% 45%;              /* blood red accent */
+    --accent: 145 70% 45%;            /* emerald green accent */
     --accent-foreground: 45 50% 95%;
 
     --destructive: 0 80% 50%;
@@ -42,10 +42,13 @@ All colors MUST be HSL.
     --gold-soft: 45 80% 70%;
     --gold-deep: 38 80% 40%;
     --skull: 0 0% 90%;
+    --emerald: 145 70% 45%;
+    --emerald-soft: 150 60% 60%;
 
     --gradient-gold: linear-gradient(135deg, hsl(45 90% 55%), hsl(38 80% 40%));
-    --gradient-luxury: linear-gradient(135deg, hsl(240 18% 6%) 0%, hsl(0 30% 8%) 50%, hsl(240 18% 6%) 100%);
-    --gradient-glow: radial-gradient(circle at top, hsl(45 90% 55% / 0.15), transparent 60%);
+    --gradient-emerald: linear-gradient(135deg, hsl(45 90% 55%), hsl(145 70% 45%));
+    --gradient-luxury: linear-gradient(135deg, hsl(240 18% 6%) 0%, hsl(155 30% 6%) 50%, hsl(45 30% 6%) 100%);
+    --gradient-glow: radial-gradient(circle at top, hsl(145 70% 45% / 0.12), transparent 60%);
 
     --shadow-gold: 0 8px 32px -8px hsl(45 90% 55% / 0.4);
     --shadow-luxury: 0 20px 60px -20px hsl(0 0% 0% / 0.8);
@@ -137,8 +140,15 @@ All colors MUST be HSL.
     background-clip: text;
     color: transparent;
   }
+  .gradient-emerald-text {
+    background: var(--gradient-emerald);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  .text-emerald { color: hsl(var(--emerald)); }
   .btn-luxury {
-    background: var(--gradient-gold);
+    background: var(--gradient-emerald);
     color: hsl(var(--primary-foreground));
     box-shadow: var(--shadow-gold);
     transition: all 0.3s ease;
