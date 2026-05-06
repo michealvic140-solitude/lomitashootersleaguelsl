@@ -9,15 +9,17 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Shield, Users, Crosshair, Megaphone, Gift, Settings, FileText, Coins, Calculator } from "lucide-react";
+import { Shield, Users, Crosshair, Megaphone, Gift, Settings, FileText, Coins, Calculator, Trash2, Lock, AlertTriangle } from "lucide-react";
 import { useAuth, AppRole, ROLE_COLORS, ROLE_LABELS } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { useConfirm } from "@/components/ConfirmModal";
 
 const ROLES: AppRole[] = ["viewer", "shooter", "gang_leader", "registered", "moderator", "admin"];
 
 const UserManagement = () => {
   const { user: me } = useAuth();
+  const confirm = useConfirm();
   const [users, setUsers] = useState<any[]>([]);
   const [rolesByUser, setRolesByUser] = useState<Record<string, AppRole[]>>({});
   const [search, setSearch] = useState("");
@@ -43,7 +45,15 @@ const UserManagement = () => {
   };
 
   const setFlag = async (uid: string, field: string, value: boolean, reasonField?: string) => {
-    const reason = value ? prompt("Reason?") || "" : "";
+    let reason = "";
+    if (value) {
+      const r = await confirm({ title: `Confirm ${field.replace("is_","")}`, destructive: true, reasonRequired: true, confirmLabel: "Apply" });
+      if (!r.confirmed) return;
+      reason = r.reason ?? "";
+    } else {
+      const r = await confirm({ title: `Lift ${field.replace("is_","")}?`, confirmLabel: "Lift" });
+      if (!r.confirmed) return;
+    }
     const update: any = { [field]: value };
     if (reasonField) update[reasonField] = reason;
     await supabase.from("profiles").update(update).eq("id", uid);
@@ -53,9 +63,15 @@ const UserManagement = () => {
   };
 
   const giveTokens = async (uid: string, current: number) => {
-    const v = parseInt(prompt("Amount (use negative to remove)") || "0", 10);
+    const r = await confirm({
+      title: "Adjust tokens", description: "Use negative to remove.",
+      inputLabel: "Amount", inputType: "number", inputPlaceholder: "e.g. 1000 or -500",
+      reasonRequired: true, confirmLabel: "Apply",
+    });
+    if (!r.confirmed) return;
+    const v = parseInt(r.value || "0", 10);
     if (!v) return;
-    const reason = prompt("Reason?") || "";
+    const reason = r.reason ?? "";
     await supabase.from("profiles").update({ token_balance: Math.max(0, current + v) }).eq("id", uid);
     await supabase.from("audit_logs").insert({ actor_id: me?.id, action: "tokens_adjust", target_type: "user", target_id: uid, metadata: { amount: v, reason } });
     await supabase.from("notifications").insert({ user_id: uid, title: "Token balance updated", body: `${v > 0 ? "+" : ""}${v} · ${reason}` });
@@ -100,6 +116,7 @@ const UserManagement = () => {
 };
 
 const MatchBuilder = () => {
+  const confirm = useConfirm();
   const [teams, setTeams] = useState<any[]>([]);
   const [matches, setMatches] = useState<any[]>([]);
   const [name, setName] = useState(""); const [home, setHome] = useState(""); const [away, setAway] = useState("");
@@ -115,6 +132,15 @@ const MatchBuilder = () => {
     setMatches(m ?? []);
   };
   useEffect(() => { load(); }, []);
+
+  // realtime so admin sees live state
+  useEffect(() => {
+    const ch = supabase.channel("admin-matches")
+      .on("postgres_changes", { event: "*", schema: "public", table: "matches" }, load)
+      .on("postgres_changes", { event: "*", schema: "public", table: "odds" }, load)
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, []);
 
   const createTeam = async () => {
     if (!newTeam.trim()) return;
@@ -140,6 +166,8 @@ const MatchBuilder = () => {
     await supabase.from("matches").update({ status: "live" as const }).eq("id", id); await load();
   };
   const endMatch = async (m: any) => {
+    const r = await confirm({ title: "End match?", description: "Open winning bets will pay out, losing bets will lose.", destructive: true, confirmLabel: "End match" });
+    if (!r.confirmed) return;
     const winner = m.home_score > m.away_score ? m.home_team_id : m.away_score > m.home_score ? m.away_team_id : null;
     await supabase.from("matches").update({ status: "ended", winner_team_id: winner }).eq("id", m.id);
     // Settle bets touching this match
@@ -161,6 +189,21 @@ const MatchBuilder = () => {
       }
     }
     await load(); toast.success("Match ended & bets settled");
+  };
+
+  const deleteMatch = async (m: any) => {
+    const r = await confirm({ title: "Delete match?", description: "Bet history is preserved; the match itself will be removed from listings.", destructive: true, reasonRequired: false, confirmLabel: "Delete" });
+    if (!r.confirmed) return;
+    await supabase.from("matches").delete().eq("id", m.id);
+    toast.success("Match deleted"); load();
+  };
+
+  const toggleAllOdds = async (matchId: string, open: boolean) => {
+    const { data: mks } = await supabase.from("markets").select("id").eq("match_id", matchId);
+    if (!mks?.length) return;
+    await supabase.from("markets").update({ is_open: open }).in("id", mks.map((x: any) => x.id));
+    toast.success(open ? "Odds enabled" : "Odds disabled");
+    load();
   };
 
   return (
@@ -213,6 +256,9 @@ const MatchBuilder = () => {
                 <Input type="number" defaultValue={m.away_score} className="w-16" onBlur={(e) => updateScore(m.id, m.home_score, parseInt(e.target.value) || 0)} />
                 {m.status === "scheduled" && <Button size="sm" onClick={() => setLive(m.id)}>Set Live</Button>}
                 {m.status !== "ended" && <Button size="sm" variant="destructive" onClick={() => endMatch(m)}>End</Button>}
+                <Button size="sm" variant="outline" onClick={() => toggleAllOdds(m.id, true)}>Enable odds</Button>
+                <Button size="sm" variant="outline" onClick={() => toggleAllOdds(m.id, false)}><Lock className="h-3 w-3 mr-1" />Disable odds</Button>
+                {m.status === "ended" && <Button size="sm" variant="destructive" onClick={() => deleteMatch(m)}><Trash2 className="h-3 w-3" /></Button>}
                 <MarketsEditor matchId={m.id} />
               </div>
             </div>
