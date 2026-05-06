@@ -5,6 +5,8 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { BetSlipProvider } from "@/contexts/BetSlipContext";
+import { ConfirmProvider } from "@/components/ConfirmModal";
+import { MaintenanceGate } from "@/components/MaintenanceGate";
 import Index from "./pages/Index.tsx";
 import Login from "./pages/Login.tsx";
 import Register from "./pages/Register.tsx";
@@ -30,8 +32,10 @@ const App = () => (
       <Toaster />
       <Sonner />
       <AuthProvider>
+        <ConfirmProvider>
         <BetSlipProvider>
         <BrowserRouter>
+          <MaintenanceGate>
           <Routes>
             <Route path="/" element={<Index />} />
             <Route path="/login" element={<Login />} />
@@ -51,8 +55,10 @@ const App = () => (
             <Route path="/admin/:tab" element={<Admin />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
+          </MaintenanceGate>
         </BrowserRouter>
         </BetSlipProvider>
+        </ConfirmProvider>
       </AuthProvider>
     </TooltipProvider>
   </QueryClientProvider>
