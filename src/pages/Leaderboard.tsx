@@ -13,7 +13,7 @@ const Leaderboard = () => {
   const [factions, setFactions] = useState<{ name: string; type: string; points: number; members: number }[]>([]);
 
   useEffect(() => {
-    (async () => {
+    const load = async () => {
       const { data: bets } = await supabase.from("bets").select("user_id, potential_payout, status").eq("status", "won");
       const points: Record<string, number> = {};
       (bets ?? []).forEach((b: any) => { points[b.user_id] = (points[b.user_id] ?? 0) + Number(b.potential_payout); });
@@ -41,7 +41,13 @@ const Leaderboard = () => {
         fmap[k].members.add(p.id);
       });
       setFactions(Object.values(fmap).map((f) => ({ ...f, members: f.members.size })).sort((a, b) => b.points - a.points).slice(0, 20));
-    })();
+    };
+    load();
+    const ch = supabase.channel("lb")
+      .on("postgres_changes", { event: "*", schema: "public", table: "bets" }, load)
+      .on("postgres_changes", { event: "*", schema: "public", table: "profiles" }, load)
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
   }, []);
 
   return (
