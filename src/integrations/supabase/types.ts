@@ -144,7 +144,7 @@ export type Database = {
           id: string
           locked_odds: number
           market_id: string
-          match_id: string
+          match_id: string | null
           odd_id: string
           result: string | null
           selection_label: string
@@ -155,7 +155,7 @@ export type Database = {
           id?: string
           locked_odds: number
           market_id: string
-          match_id: string
+          match_id?: string | null
           odd_id: string
           result?: string | null
           selection_label: string
@@ -166,7 +166,7 @@ export type Database = {
           id?: string
           locked_odds?: number
           market_id?: string
-          match_id?: string
+          match_id?: string | null
           odd_id?: string
           result?: string | null
           selection_label?: string
@@ -805,6 +805,39 @@ export type Database = {
         }
         Relationships: []
       }
+      token_transactions: {
+        Row: {
+          amount: number
+          balance_after: number
+          created_at: string
+          description: string | null
+          id: string
+          kind: string
+          metadata: Json | null
+          user_id: string
+        }
+        Insert: {
+          amount: number
+          balance_after: number
+          created_at?: string
+          description?: string | null
+          id?: string
+          kind: string
+          metadata?: Json | null
+          user_id: string
+        }
+        Update: {
+          amount?: number
+          balance_after?: number
+          created_at?: string
+          description?: string | null
+          id?: string
+          kind?: string
+          metadata?: Json | null
+          user_id?: string
+        }
+        Relationships: []
+      }
       user_roles: {
         Row: {
           assigned_by: string | null
@@ -844,6 +877,7 @@ export type Database = {
       }
       is_admin: { Args: { _user_id: string }; Returns: boolean }
       is_mod_or_admin: { Args: { _user_id: string }; Returns: boolean }
+      wipe_all_tokens: { Args: never; Returns: undefined }
     }
     Enums: {
       app_role:
