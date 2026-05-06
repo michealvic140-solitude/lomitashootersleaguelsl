@@ -391,11 +391,23 @@ const Content = () => {
 
 const TokenRequests = () => {
   const { user: me } = useAuth();
+  const confirm = useConfirm();
   const [items, setItems] = useState<any[]>([]);
   const load = () => supabase.from("token_requests").select("*,profile:profiles(full_name,email,token_balance)").order("created_at", { ascending: false }).then(({ data }) => setItems(data ?? []));
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    load();
+    const ch = supabase.channel("admin-tr").on("postgres_changes", { event: "*", schema: "public", table: "token_requests" }, load).subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, []);
   const decide = async (r: any, approve: boolean) => {
-    const note = prompt(approve ? "Approval note (optional)" : "Reason for denial") || "";
+    const res = await confirm({
+      title: approve ? "Approve request" : "Deny request",
+      description: `${r.amount} tokens · ${r.profile?.full_name}`,
+      destructive: !approve, reasonRequired: !approve,
+      confirmLabel: approve ? "Approve" : "Deny",
+    });
+    if (!res.confirmed) return;
+    const note = res.reason ?? "";
     await supabase.from("token_requests").update({ status: approve ? "approved" : "denied", reviewed_by: me?.id, reviewed_at: new Date().toISOString(), review_note: note }).eq("id", r.id);
     if (approve) {
       await supabase.from("profiles").update({ token_balance: (r.profile?.token_balance ?? 0) + Number(r.amount) }).eq("id", r.user_id);
@@ -453,15 +465,55 @@ const OddsCalculator = () => {
 };
 
 const SettingsTab = () => {
+  const confirm = useConfirm();
   const [s, setS] = useState<any>(null);
-  useEffect(() => { supabase.from("app_settings").select("*").eq("id", 1).single().then(({ data }) => setS(data)); }, []);
+  const reload = () => supabase.from("app_settings").select("*").eq("id", 1).maybeSingle().then(({ data }) => setS(data));
+  useEffect(() => {
+    (async () => {
+      const { data } = await supabase.from("app_settings").select("*").eq("id", 1).maybeSingle();
+      if (!data) {
+        await supabase.from("app_settings").insert({ id: 1 });
+        reload();
+      } else setS(data);
+    })();
+  }, []);
   if (!s) return null;
-  const save = async () => { await supabase.from("app_settings").update(s).eq("id", 1); toast.success("Saved"); };
+  const save = async () => {
+    const { id, updated_at, ...rest } = s;
+    const { error } = await supabase.from("app_settings").update(rest).eq("id", 1);
+    if (error) toast.error(error.message); else toast.success("Saved");
+  };
+  const wipeAll = async () => {
+    const r = await confirm({
+      title: "EMERGENCY: Wipe ALL user tokens?",
+      description: "Every user's token balance will be reset to zero. This cannot be undone.",
+      destructive: true, reasonRequired: true,
+      confirmLabel: "WIPE ALL TOKENS",
+    });
+    if (!r.confirmed) return;
+    const { error } = await supabase.rpc("wipe_all_tokens");
+    if (error) return toast.error(error.message);
+    toast.success("All tokens wiped");
+  };
   return (
+    <div className="space-y-4">
     <Card className="glass p-4 space-y-3">
-      <div className="flex items-center justify-between"><Label>Maintenance mode</Label><input type="checkbox" checked={s.maintenance_mode} onChange={(e) => setS({ ...s, maintenance_mode: e.target.checked })} /></div>
+      <div className="flex items-center justify-between gap-3 p-3 rounded glass-gold">
+        <div>
+          <div className="font-bold gradient-gold-text">Maintenance mode</div>
+          <div className="text-xs text-muted-foreground">Locks the platform for non-admins.</div>
+        </div>
+        <button
+          onClick={() => setS({ ...s, maintenance_mode: !s.maintenance_mode })}
+          className={`relative h-7 w-12 rounded-full transition ${s.maintenance_mode ? "bg-emerald-500" : "bg-secondary"}`}
+        >
+          <span className={`absolute top-1 h-5 w-5 rounded-full bg-background transition ${s.maintenance_mode ? "left-6" : "left-1"}`} />
+        </button>
+      </div>
       <div><Label>Maintenance message</Label><Textarea value={s.maintenance_message ?? ""} onChange={(e) => setS({ ...s, maintenance_message: e.target.value })} /></div>
       <div><Label>Terms & Conditions</Label><Textarea rows={6} value={s.terms_content ?? ""} onChange={(e) => setS({ ...s, terms_content: e.target.value })} /></div>
+      <div><Label>About Us</Label><Textarea rows={3} value={s.about_us ?? ""} onChange={(e) => setS({ ...s, about_us: e.target.value })} /></div>
+      <div><Label>Why Trust Us</Label><Textarea rows={3} value={s.why_trust_us ?? ""} onChange={(e) => setS({ ...s, why_trust_us: e.target.value })} /></div>
       <div className="grid md:grid-cols-3 gap-2">
         <div><Label>Email</Label><Input value={s.contact_email ?? ""} onChange={(e) => setS({ ...s, contact_email: e.target.value })} /></div>
         <div><Label>Phone</Label><Input value={s.contact_phone ?? ""} onChange={(e) => setS({ ...s, contact_phone: e.target.value })} /></div>
@@ -469,6 +521,12 @@ const SettingsTab = () => {
       </div>
       <Button onClick={save} className="btn-luxury">Save settings</Button>
     </Card>
+    <Card className="glass p-4 border border-destructive/40">
+      <h3 className="font-bold text-destructive flex items-center gap-2"><AlertTriangle className="h-5 w-5" />Emergency controls</h3>
+      <p className="text-xs text-muted-foreground mt-1">One-tap kill-switch. Use with extreme care.</p>
+      <Button onClick={wipeAll} variant="destructive" className="mt-3 w-full font-black">🚨 WIPE ALL USER TOKENS</Button>
+    </Card>
+    </div>
   );
 };
 
