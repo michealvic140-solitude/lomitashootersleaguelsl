@@ -22,6 +22,7 @@ import Notifications from "./pages/Notifications.tsx";
 import Support from "./pages/Support.tsx";
 import TicketSlip from "./pages/TicketSlip.tsx";
 import Admin from "./pages/Admin.tsx";
+import Checkout from "./pages/Checkout.tsx";
 import NotFound from "./pages/NotFound.tsx";
 
 const queryClient = new QueryClient();
@@ -51,6 +52,7 @@ const App = () => (
             <Route path="/notifications" element={<Notifications />} />
             <Route path="/support" element={<Support />} />
             <Route path="/ticket/:id" element={<TicketSlip />} />
+            <Route path="/checkout" element={<Checkout />} />
             <Route path="/admin" element={<Admin />} />
             <Route path="/admin/:tab" element={<Admin />} />
             <Route path="*" element={<NotFound />} />
