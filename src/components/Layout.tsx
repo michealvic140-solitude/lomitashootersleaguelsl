@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useAuth, ROLE_COLORS, ROLE_LABELS } from "@/contexts/AuthContext";
 import { ParticleBackground } from "./ParticleBackground";
+import { MobileBottomNav } from "./MobileBottomNav";
 import { ReactNode } from "react";
 
 export const Layout = ({ children }: { children: ReactNode }) => {
@@ -79,6 +80,8 @@ export const Layout = ({ children }: { children: ReactNode }) => {
         )}
       </header>
       <main className="relative">{children}</main>
+      <div className="md:hidden h-20" />
+      <MobileBottomNav />
       <footer className="glass border-t border-primary/20 mt-20">
         <div className="container py-8 text-center text-sm text-muted-foreground">
           <div className="gradient-gold-text font-bold tracking-widest mb-2">LOMITA SHOOTERS LEAGUE</div>

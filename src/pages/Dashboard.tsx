@@ -5,7 +5,7 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Coins, Ticket, Gift, Copy, Upload } from "lucide-react";
+import { Coins, Ticket, Gift, Copy, Upload, History } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
@@ -13,6 +13,7 @@ import { toast } from "sonner";
 const Dashboard = () => {
   const { user, profile, loading, refresh } = useAuth();
   const [bets, setBets] = useState<any[]>([]);
+  const [txs, setTxs] = useState<any[]>([]);
   const [promoCode, setPromoCode] = useState("");
   const [bookingCode, setBookingCode] = useState("");
   const [stake, setStake] = useState("");
@@ -23,8 +24,16 @@ const Dashboard = () => {
 
   useEffect(() => {
     if (!user) return;
-    supabase.from("bets").select("*,bet_selections(*)").eq("user_id", user.id).order("created_at", { ascending: false }).limit(50)
+    const loadBets = () => supabase.from("bets").select("*,bet_selections(*)").eq("user_id", user.id).order("created_at", { ascending: false }).limit(50)
       .then(({ data }) => setBets(data ?? []));
+    const loadTxs = () => supabase.from("token_transactions").select("*").eq("user_id", user.id).order("created_at", { ascending: false }).limit(50)
+      .then(({ data }) => setTxs(data ?? []));
+    loadBets(); loadTxs();
+    const ch = supabase.channel(`dash-${user.id}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "bets", filter: `user_id=eq.${user.id}` }, loadBets)
+      .on("postgres_changes", { event: "*", schema: "public", table: "token_transactions", filter: `user_id=eq.${user.id}` }, loadTxs)
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
   }, [user]);
 
   if (loading) return <Layout><div className="container py-12">Loading...</div></Layout>;
@@ -182,6 +191,27 @@ const Dashboard = () => {
                   </div>
                 </div>
               </Link>
+            ))}
+          </div>
+        </Card>
+
+        <Card className="glass p-5">
+          <h3 className="font-bold mb-4 flex items-center gap-2"><History className="h-4 w-4 text-primary" />Transaction history</h3>
+          <div className="space-y-1 max-h-[400px] overflow-y-auto">
+            {txs.length === 0 && <p className="text-sm text-muted-foreground text-center py-6">No transactions yet.</p>}
+            {txs.map((t) => (
+              <div key={t.id} className="flex items-center justify-between p-2 glass rounded text-xs">
+                <div>
+                  <div className="font-bold">{t.description ?? t.kind}</div>
+                  <div className="text-muted-foreground">{new Date(t.created_at).toLocaleString()}</div>
+                </div>
+                <div className="text-right">
+                  <div className={`font-bold ${Number(t.amount) > 0 ? "text-emerald-400" : "text-red-400"}`}>
+                    {Number(t.amount) > 0 ? "+" : ""}{Number(t.amount).toLocaleString()}
+                  </div>
+                  <div className="text-[10px] text-muted-foreground">bal {Number(t.balance_after).toLocaleString()}</div>
+                </div>
+              </div>
             ))}
           </div>
         </Card>

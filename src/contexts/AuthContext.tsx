@@ -73,6 +73,19 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     return () => sub.subscription.unsubscribe();
   }, []);
 
+  // Realtime: live profile + role updates so token balance / bans reflect instantly
+  useEffect(() => {
+    if (!user) return;
+    const ch = supabase
+      .channel(`me-${user.id}`)
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "profiles", filter: `id=eq.${user.id}` },
+        (payload) => setProfile((prev) => ({ ...(prev as Profile), ...(payload.new as Profile) })))
+      .on("postgres_changes", { event: "*", schema: "public", table: "user_roles", filter: `user_id=eq.${user.id}` },
+        () => loadUserData(user.id))
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [user?.id]);
+
   const signOut = async () => {
     await supabase.auth.signOut();
     setProfile(null);
