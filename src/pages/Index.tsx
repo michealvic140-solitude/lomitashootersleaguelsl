@@ -204,9 +204,53 @@ const Index = () => {
             <h2 className="text-lg font-bold mb-3 flex items-center gap-2"><Trophy className="h-5 w-5 text-gold" />Hot Now</h2>
             <Link to="/leaderboard"><Card className="glass-gold p-6 text-center"><div className="font-bold gradient-gold-text">View live leaderboard →</div></Card></Link>
           </section>
+          {highlights.length > 0 && (
+            <section>
+              <h2 className="text-lg font-bold mb-3 flex items-center gap-2"><Sparkles className="h-5 w-5 text-gold" />Highlights</h2>
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                {highlights.map((h) => (
+                  <Card key={h.id} className="glass overflow-hidden">
+                    {h.media_type === "video"
+                      ? <video src={h.media_url} controls className="w-full aspect-video object-cover" />
+                      : <img src={h.media_url} className="w-full aspect-video object-cover" alt={h.title} />}
+                    <div className="p-2 text-xs font-bold truncate">{h.title}</div>
+                  </Card>
+                ))}
+              </div>
+            </section>
+          )}
+          {(settings?.about_us || settings?.why_trust_us) && (
+            <section className="grid md:grid-cols-2 gap-3">
+              {settings?.about_us && <Card className="glass p-5"><h3 className="font-bold gradient-gold-text mb-2">About Us</h3><p className="text-sm whitespace-pre-wrap text-muted-foreground">{settings.about_us}</p></Card>}
+              {settings?.why_trust_us && <Card className="glass p-5"><h3 className="font-bold gradient-gold-text mb-2">Why Trust Us</h3><p className="text-sm whitespace-pre-wrap text-muted-foreground">{settings.why_trust_us}</p></Card>}
+            </section>
+          )}
+          {settings && (
+            <section>
+              <Card className="glass p-5">
+                <h3 className="font-bold gradient-gold-text mb-3">Contact</h3>
+                <div className="flex flex-wrap gap-3 text-sm">
+                  {settings.contact_email && <a className="flex items-center gap-1 text-gold hover:underline" href={`mailto:${settings.contact_email}`}><Mail className="h-4 w-4" />{settings.contact_email}</a>}
+                  {settings.contact_phone && <a className="flex items-center gap-1 text-gold hover:underline" href={`tel:${settings.contact_phone}`}><Phone className="h-4 w-4" />{settings.contact_phone}</a>}
+                  {settings.contact_whatsapp && <a className="flex items-center gap-1 text-gold hover:underline" href={`https://wa.me/${settings.contact_whatsapp.replace(/[^0-9]/g,'')}`} target="_blank" rel="noreferrer"><MessageCircle className="h-4 w-4" />WhatsApp</a>}
+                  {settings.terms_content && <button onClick={() => setShowTerms(true)} className="text-gold hover:underline">Terms & Conditions</button>}
+                </div>
+              </Card>
+            </section>
+          )}
         </div>
         <aside className="hidden lg:block"><BetSlipPanel /></aside>
       </div>
+
+      {showTerms && settings?.terms_content && (
+        <div onClick={() => setShowTerms(false)} className="fixed inset-0 z-[80] bg-black/70 backdrop-blur flex items-center justify-center p-4">
+          <div onClick={(e) => e.stopPropagation()} className="glass-gold max-w-2xl w-full max-h-[80vh] overflow-y-auto p-6 rounded-2xl">
+            <h3 className="text-xl font-bold gradient-gold-text mb-3">Terms & Conditions</h3>
+            <p className="whitespace-pre-wrap text-sm text-muted-foreground">{settings.terms_content}</p>
+            <Button onClick={() => setShowTerms(false)} className="btn-luxury mt-4 w-full">Close</Button>
+          </div>
+        </div>
+      )}
 
       {selections.length > 0 && (
         <div className="lg:hidden fixed bottom-20 left-2 right-2 z-30">
