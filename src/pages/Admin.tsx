@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Shield, Users, Crosshair, Megaphone, Gift, Settings, FileText, Coins, Calculator, Trash2, Lock, AlertTriangle } from "lucide-react";
+import { Shield, Users, Crosshair, Megaphone, Gift, Settings, FileText, Coins, Calculator, Trash2, Lock, AlertTriangle, CalendarClock, Sparkles, ListChecks, Send, LifeBuoy, Trophy, Bot } from "lucide-react";
 import { useAuth, AppRole, ROLE_COLORS, ROLE_LABELS } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
@@ -23,6 +23,12 @@ const UserManagement = () => {
   const [users, setUsers] = useState<any[]>([]);
   const [rolesByUser, setRolesByUser] = useState<Record<string, AppRole[]>>({});
   const [search, setSearch] = useState("");
+  const [filter, setFilter] = useState<"all" | "banned" | "muted" | "restricted" | "recent" | "old">("all");
+  const [roleFilter, setRoleFilter] = useState<string>("all");
+  const [detail, setDetail] = useState<any | null>(null);
+  const [detailBets, setDetailBets] = useState<any[]>([]);
+  const [detailTx, setDetailTx] = useState<any[]>([]);
+  const [detailLogs, setDetailLogs] = useState<any[]>([]);
 
   const load = async () => {
     const { data: ps } = await supabase.from("profiles").select("*").order("created_at", { ascending: false }).limit(200);
@@ -35,6 +41,16 @@ const UserManagement = () => {
     setRolesByUser(map);
   };
   useEffect(() => { load(); }, []);
+
+  const openDetail = async (u: any) => {
+    setDetail(u);
+    const [b, t, l] = await Promise.all([
+      supabase.from("bets").select("*").eq("user_id", u.id).order("created_at", { ascending: false }).limit(50),
+      supabase.from("token_transactions").select("*").eq("user_id", u.id).order("created_at", { ascending: false }).limit(50),
+      supabase.from("audit_logs").select("*").eq("target_id", u.id).order("created_at", { ascending: false }).limit(50),
+    ]);
+    setDetailBets(b.data ?? []); setDetailTx(t.data ?? []); setDetailLogs(l.data ?? []);
+  };
 
   const toggleRole = async (uid: string, role: AppRole) => {
     const has = (rolesByUser[uid] ?? []).includes(role);
@@ -78,16 +94,43 @@ const UserManagement = () => {
     await load();
   };
 
-  const filtered = users.filter((u) => !search || (u.full_name + u.email + (u.gang_name ?? "")).toLowerCase().includes(search.toLowerCase()));
+  let filtered = users.filter((u) => !search || (u.full_name + u.email + (u.gang_name ?? "")).toLowerCase().includes(search.toLowerCase()));
+  if (filter === "banned") filtered = filtered.filter((u) => u.is_banned);
+  if (filter === "muted") filtered = filtered.filter((u) => u.is_muted);
+  if (filter === "restricted") filtered = filtered.filter((u) => u.is_restricted);
+  if (filter === "recent") filtered = [...filtered].sort((a, b) => +new Date(b.created_at) - +new Date(a.created_at));
+  if (filter === "old") filtered = [...filtered].sort((a, b) => +new Date(a.created_at) - +new Date(b.created_at));
+  if (roleFilter !== "all") filtered = filtered.filter((u) => (rolesByUser[u.id] ?? []).includes(roleFilter as AppRole));
 
   return (
     <div className="space-y-3">
-      <Input placeholder="Search by name, email, gang..." value={search} onChange={(e) => setSearch(e.target.value)} />
+      <div className="grid md:grid-cols-3 gap-2">
+        <Input placeholder="Search name, email, gang..." value={search} onChange={(e) => setSearch(e.target.value)} />
+        <Select value={filter} onValueChange={(v) => setFilter(v as any)}>
+          <SelectTrigger><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All users</SelectItem>
+            <SelectItem value="banned">Banned</SelectItem>
+            <SelectItem value="muted">Muted</SelectItem>
+            <SelectItem value="restricted">Restricted</SelectItem>
+            <SelectItem value="recent">Newest first</SelectItem>
+            <SelectItem value="old">Oldest first</SelectItem>
+          </SelectContent>
+        </Select>
+        <Select value={roleFilter} onValueChange={setRoleFilter}>
+          <SelectTrigger><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Any role</SelectItem>
+            {ROLES.map((r) => <SelectItem key={r} value={r}>{r}</SelectItem>)}
+          </SelectContent>
+        </Select>
+      </div>
+      <div className="text-xs text-muted-foreground">{filtered.length} of {users.length} users</div>
       {filtered.map((u) => (
         <Card key={u.id} className="glass p-4">
           <div className="flex items-start justify-between gap-3 flex-wrap">
             <div>
-              <div className="font-bold">{u.full_name}</div>
+              <button onClick={() => openDetail(u)} className="font-bold text-left hover:text-gold">{u.full_name}</button>
               <div className="text-xs text-muted-foreground">{u.email} {u.gang_name && <>· {u.gang_name} ({u.gang_type})</>}</div>
               <div className="text-xs text-gold mt-1">Tokens: {u.token_balance.toLocaleString()}</div>
               <div className="flex flex-wrap gap-1 mt-2">
@@ -108,9 +151,33 @@ const UserManagement = () => {
             <Button size="sm" variant="outline" onClick={() => setFlag(u.id, "is_banned", !u.is_banned, "ban_reason")}>{u.is_banned ? "Unban" : "Ban"}</Button>
             <Button size="sm" variant="outline" onClick={() => setFlag(u.id, "is_muted", !u.is_muted, "mute_reason")}>{u.is_muted ? "Unmute" : "Mute"}</Button>
             <Button size="sm" variant="outline" onClick={() => setFlag(u.id, "is_restricted", !u.is_restricted, "restrict_reason")}>{u.is_restricted ? "Unrestrict" : "Restrict bets"}</Button>
+            <Button size="sm" variant="outline" onClick={() => openDetail(u)}>View profile</Button>
           </div>
         </Card>
       ))}
+      {detail && (
+        <div onClick={() => setDetail(null)} className="fixed inset-0 z-[80] bg-black/70 backdrop-blur flex items-center justify-center p-4">
+          <div onClick={(e) => e.stopPropagation()} className="glass-gold max-w-2xl w-full max-h-[85vh] overflow-y-auto p-6 rounded-2xl space-y-3">
+            <h3 className="text-2xl font-black gradient-gold-text">{detail.full_name}</h3>
+            <div className="text-xs text-muted-foreground">{detail.email} · {detail.country ?? ""} · {detail.discord_username ?? ""} · {detail.phone ?? ""}</div>
+            <div className="text-xs">Server: {detail.server} · Gang: {detail.gang_name ?? "—"} ({detail.gang_type ?? "—"})</div>
+            <div className="text-sm text-gold">Tokens: {detail.token_balance.toLocaleString()}</div>
+            <div>
+              <h4 className="font-bold text-sm mt-3">Bets ({detailBets.length})</h4>
+              {detailBets.map((b) => <div key={b.id} className="text-xs flex justify-between"><span className="font-mono">{b.tracking_id}</span><span>{b.status} · stake {b.stake} · payout {b.potential_payout}</span></div>)}
+            </div>
+            <div>
+              <h4 className="font-bold text-sm mt-3">Transactions ({detailTx.length})</h4>
+              {detailTx.map((t) => <div key={t.id} className="text-xs flex justify-between"><span>{new Date(t.created_at).toLocaleString()} · {t.description ?? t.kind}</span><span className={Number(t.amount)>0?"text-emerald-400":"text-red-400"}>{Number(t.amount)>0?"+":""}{t.amount}</span></div>)}
+            </div>
+            <div>
+              <h4 className="font-bold text-sm mt-3">Audit ({detailLogs.length})</h4>
+              {detailLogs.map((l) => <div key={l.id} className="text-xs"><b className="text-gold">{l.action}</b> · {new Date(l.created_at).toLocaleString()}</div>)}
+            </div>
+            <Button onClick={() => setDetail(null)} className="btn-luxury w-full">Close</Button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
@@ -564,6 +631,253 @@ const Logs = () => {
 };
 
 const Admin = () => {
+  return <AdminInner />;
+};
+
+const EventsTab = () => {
+  const [items, setItems] = useState<any[]>([]);
+  const [title, setTitle] = useState(""); const [desc, setDesc] = useState(""); const [start, setStart] = useState(""); const [file, setFile] = useState<File | null>(null);
+  const load = () => supabase.from("upcoming_events").select("*").order("starts_at").then(({ data }) => setItems(data ?? []));
+  useEffect(() => {
+    load();
+    const ch = supabase.channel("admin-events").on("postgres_changes", { event: "*", schema: "public", table: "upcoming_events" }, load).subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, []);
+  const create = async () => {
+    if (!title || !start) return toast.error("Title & date required");
+    let image_url: string | null = null;
+    if (file) {
+      const path = `events/${Date.now()}_${file.name}`;
+      const { error } = await supabase.storage.from("announcements").upload(path, file);
+      if (error) return toast.error(error.message);
+      image_url = supabase.storage.from("announcements").getPublicUrl(path).data.publicUrl;
+    }
+    await supabase.from("upcoming_events").insert({ title, description: desc || null, image_url, starts_at: new Date(start).toISOString() });
+    setTitle(""); setDesc(""); setStart(""); setFile(null); toast.success("Event posted");
+  };
+  return (
+    <div className="space-y-3">
+      <Card className="glass p-4 space-y-2">
+        <h3 className="font-bold gradient-gold-text">Post bold countdown event</h3>
+        <Input placeholder="Title" value={title} onChange={(e) => setTitle(e.target.value)} />
+        <Textarea placeholder="Description (optional)" value={desc} onChange={(e) => setDesc(e.target.value)} />
+        <div className="grid md:grid-cols-2 gap-2">
+          <Input type="datetime-local" value={start} onChange={(e) => setStart(e.target.value)} />
+          <Input type="file" accept="image/*" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
+        </div>
+        <Button className="btn-luxury" onClick={create}>Publish event</Button>
+      </Card>
+      {items.map((ev) => (
+        <Card key={ev.id} className="glass p-3 flex justify-between items-center gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            {ev.image_url && <img src={ev.image_url} className="h-12 w-20 object-cover rounded" alt="" />}
+            <div className="min-w-0">
+              <div className="font-bold truncate">{ev.title}</div>
+              <div className="text-xs text-muted-foreground">{new Date(ev.starts_at).toLocaleString()}</div>
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <Button size="sm" variant="outline" onClick={() => supabase.from("upcoming_events").update({ is_active: !ev.is_active }).eq("id", ev.id).then(load)}>{ev.is_active ? "Hide" : "Show"}</Button>
+            <Button size="sm" variant="destructive" onClick={() => supabase.from("upcoming_events").delete().eq("id", ev.id).then(load)}><Trash2 className="h-3 w-3" /></Button>
+          </div>
+        </Card>
+      ))}
+    </div>
+  );
+};
+
+const HighlightsTab = () => {
+  const [items, setItems] = useState<any[]>([]);
+  const [title, setTitle] = useState(""); const [type, setType] = useState<"image" | "video">("image"); const [file, setFile] = useState<File | null>(null);
+  const load = () => supabase.from("highlights").select("*").order("created_at", { ascending: false }).then(({ data }) => setItems(data ?? []));
+  useEffect(() => { load(); }, []);
+  const create = async () => {
+    if (!title || !file) return toast.error("Title & file required");
+    const path = `${Date.now()}_${file.name}`;
+    const { error } = await supabase.storage.from("highlights").upload(path, file);
+    if (error) return toast.error(error.message);
+    const media_url = supabase.storage.from("highlights").getPublicUrl(path).data.publicUrl;
+    await supabase.from("highlights").insert({ title, media_url, media_type: type });
+    setTitle(""); setFile(null); load(); toast.success("Highlight posted");
+  };
+  return (
+    <div className="space-y-3">
+      <Card className="glass p-4 space-y-2">
+        <h3 className="font-bold gradient-gold-text">Post highlight</h3>
+        <Input placeholder="Title" value={title} onChange={(e) => setTitle(e.target.value)} />
+        <div className="grid md:grid-cols-2 gap-2">
+          <Select value={type} onValueChange={(v) => setType(v as any)}>
+            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectContent><SelectItem value="image">Image</SelectItem><SelectItem value="video">Video</SelectItem></SelectContent>
+          </Select>
+          <Input type="file" accept={type === "video" ? "video/*" : "image/*"} onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
+        </div>
+        <Button className="btn-luxury" onClick={create}>Publish</Button>
+      </Card>
+      <div className="grid md:grid-cols-3 gap-2">
+        {items.map((h) => (
+          <Card key={h.id} className="glass overflow-hidden">
+            {h.media_type === "video" ? <video src={h.media_url} className="w-full aspect-video" controls /> : <img src={h.media_url} className="w-full aspect-video object-cover" alt="" />}
+            <div className="p-2 flex justify-between items-center"><div className="text-xs font-bold truncate">{h.title}</div>
+              <div className="flex gap-1">
+                <Button size="sm" variant="outline" onClick={() => supabase.from("highlights").update({ is_active: !h.is_active }).eq("id", h.id).then(load)}>{h.is_active ? "Hide" : "Show"}</Button>
+                <Button size="sm" variant="destructive" onClick={() => supabase.from("highlights").delete().eq("id", h.id).then(load)}><Trash2 className="h-3 w-3" /></Button>
+              </div>
+            </div>
+          </Card>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+const CategoriesTab = () => {
+  const [items, setItems] = useState<any[]>([]);
+  const [name, setName] = useState(""); const [icon, setIcon] = useState("");
+  const load = () => supabase.from("categories").select("*").order("created_at").then(({ data }) => setItems(data ?? []));
+  useEffect(() => { load(); }, []);
+  return (
+    <div className="space-y-3">
+      <Card className="glass p-4 grid md:grid-cols-3 gap-2">
+        <Input placeholder="Category name" value={name} onChange={(e) => setName(e.target.value)} />
+        <Input placeholder="Icon (emoji)" value={icon} onChange={(e) => setIcon(e.target.value)} />
+        <Button className="btn-luxury" onClick={async () => { if (!name) return; await supabase.from("categories").insert({ name, icon: icon || null }); setName(""); setIcon(""); load(); }}>Add</Button>
+      </Card>
+      {items.map((c) => (
+        <Card key={c.id} className="glass p-3 flex justify-between items-center">
+          <div><span className="mr-2">{c.icon}</span><b>{c.name}</b></div>
+          <Button size="sm" variant="destructive" onClick={() => supabase.from("categories").delete().eq("id", c.id).then(load)}><Trash2 className="h-3 w-3" /></Button>
+        </Card>
+      ))}
+    </div>
+  );
+};
+
+const SendNotificationsTab = () => {
+  const { user: me } = useAuth();
+  const [title, setTitle] = useState(""); const [body, setBody] = useState(""); const [target, setTarget] = useState<string>("all");
+  const [users, setUsers] = useState<any[]>([]);
+  const [pickedUser, setPickedUser] = useState<string>("");
+  useEffect(() => { supabase.from("profiles").select("id,full_name,email").order("full_name").then(({ data }) => setUsers(data ?? [])); }, []);
+  const send = async () => {
+    if (!title) return toast.error("Title required");
+    let recipientIds: string[] = [];
+    if (target === "all") recipientIds = users.map((u) => u.id);
+    else if (target === "user") { if (!pickedUser) return toast.error("Pick user"); recipientIds = [pickedUser]; }
+    else { // role
+      const { data } = await supabase.from("user_roles").select("user_id").eq("role", target as AppRole);
+      recipientIds = (data ?? []).map((r: any) => r.user_id);
+    }
+    if (!recipientIds.length) return toast.error("No recipients");
+    await supabase.from("notifications").insert(recipientIds.map((uid) => ({ user_id: uid, title, body: body || null })));
+    await supabase.from("audit_logs").insert({ actor_id: me?.id, action: "notification_send", target_type: "broadcast", metadata: { count: recipientIds.length, target } });
+    toast.success(`Sent to ${recipientIds.length} user(s)`);
+    setTitle(""); setBody("");
+  };
+  return (
+    <Card className="glass p-4 space-y-2">
+      <h3 className="font-bold gradient-gold-text">Send notification</h3>
+      <Input placeholder="Title" value={title} onChange={(e) => setTitle(e.target.value)} />
+      <Textarea placeholder="Body" value={body} onChange={(e) => setBody(e.target.value)} />
+      <div className="grid md:grid-cols-2 gap-2">
+        <Select value={target} onValueChange={setTarget}>
+          <SelectTrigger><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All users</SelectItem>
+            <SelectItem value="user">Specific user</SelectItem>
+            {ROLES.map((r) => <SelectItem key={r} value={r}>Role: {r}</SelectItem>)}
+          </SelectContent>
+        </Select>
+        {target === "user" && (
+          <Select value={pickedUser} onValueChange={setPickedUser}>
+            <SelectTrigger><SelectValue placeholder="Pick user" /></SelectTrigger>
+            <SelectContent>{users.map((u) => <SelectItem key={u.id} value={u.id}>{u.full_name} ({u.email})</SelectItem>)}</SelectContent>
+          </Select>
+        )}
+      </div>
+      <Button className="btn-luxury" onClick={send}><Send className="h-4 w-4 mr-1" />Send</Button>
+    </Card>
+  );
+};
+
+const SupportTab = () => {
+  const { user: me } = useAuth();
+  const [tickets, setTickets] = useState<any[]>([]);
+  const [open, setOpen] = useState<any | null>(null);
+  const [msgs, setMsgs] = useState<any[]>([]);
+  const [reply, setReply] = useState("");
+  const load = () => supabase.from("support_tickets").select("*,profile:profiles(full_name,email)").order("created_at", { ascending: false }).then(({ data }) => setTickets(data ?? []));
+  useEffect(() => {
+    load();
+    const ch = supabase.channel("admin-support").on("postgres_changes", { event: "*", schema: "public", table: "support_tickets" }, load).subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, []);
+  const openTicket = async (t: any) => {
+    setOpen(t);
+    const { data } = await supabase.from("ticket_messages").select("*").eq("ticket_id", t.id).order("created_at");
+    setMsgs(data ?? []);
+  };
+  const send = async () => {
+    if (!open || !reply.trim() || !me) return;
+    await supabase.from("ticket_messages").insert({ ticket_id: open.id, user_id: me.id, content: reply });
+    setReply(""); openTicket(open);
+  };
+  const close = async (t: any) => {
+    await supabase.from("support_tickets").update({ status: "closed" }).eq("id", t.id); load();
+  };
+  return (
+    <div className="space-y-2">
+      {tickets.map((t) => (
+        <Card key={t.id} className="glass p-3 flex justify-between items-center">
+          <div>
+            <div className="font-bold">{t.subject}</div>
+            <div className="text-xs text-muted-foreground">{t.profile?.full_name} · {t.status} · {new Date(t.created_at).toLocaleString()}</div>
+          </div>
+          <div className="flex gap-2">
+            <Button size="sm" onClick={() => openTicket(t)}>Open</Button>
+            {t.status !== "closed" && <Button size="sm" variant="destructive" onClick={() => close(t)}>Close</Button>}
+          </div>
+        </Card>
+      ))}
+      {open && (
+        <div onClick={() => setOpen(null)} className="fixed inset-0 z-[80] bg-black/70 backdrop-blur flex items-center justify-center p-4">
+          <div onClick={(e) => e.stopPropagation()} className="glass-gold max-w-xl w-full max-h-[85vh] overflow-y-auto p-6 rounded-2xl space-y-3">
+            <h3 className="text-xl font-bold gradient-gold-text">{open.subject}</h3>
+            <div className="space-y-2 max-h-[40vh] overflow-y-auto">
+              {msgs.map((m) => (
+                <div key={m.id} className="text-sm p-2 bg-secondary/30 rounded">
+                  <div className="text-[10px] text-muted-foreground">{new Date(m.created_at).toLocaleString()}</div>
+                  {m.content}
+                </div>
+              ))}
+            </div>
+            <Textarea value={reply} onChange={(e) => setReply(e.target.value)} placeholder="Reply..." />
+            <div className="flex gap-2"><Button onClick={send} className="btn-luxury flex-1">Send reply</Button><Button variant="outline" onClick={() => setOpen(null)}>Close</Button></div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+const LeaderboardTab = () => {
+  const [users, setUsers] = useState<any[]>([]);
+  const load = () => supabase.from("profiles").select("id,full_name,gang_name,token_balance").order("token_balance", { ascending: false }).limit(50).then(({ data }) => setUsers(data ?? []));
+  useEffect(() => { load(); }, []);
+  return (
+    <div className="space-y-2">
+      <p className="text-xs text-muted-foreground">Leaderboard auto-updates from token balances. Adjust tokens via Users tab to influence rankings.</p>
+      {users.map((u, i) => (
+        <Card key={u.id} className="glass p-3 flex justify-between items-center">
+          <div className="flex items-center gap-3"><span className="text-xl font-black gradient-gold-text">#{i + 1}</span><div><div className="font-bold">{u.full_name}</div><div className="text-xs text-muted-foreground">{u.gang_name ?? "—"}</div></div></div>
+          <div className="text-gold font-bold">{u.token_balance.toLocaleString()}</div>
+        </Card>
+      ))}
+    </div>
+  );
+};
+
+const AdminInner = () => {
   const { isAdmin, loading } = useAuth();
   if (loading) return <Layout><div className="container py-12">Loading...</div></Layout>;
   if (!isAdmin) return <Navigate to="/" replace />;
@@ -575,19 +889,33 @@ const Admin = () => {
           <TabsList className="glass flex-wrap h-auto">
             <TabsTrigger value="users"><Users className="h-4 w-4 mr-1" />Users</TabsTrigger>
             <TabsTrigger value="matches"><Crosshair className="h-4 w-4 mr-1" />Matches</TabsTrigger>
+            <TabsTrigger value="categories"><ListChecks className="h-4 w-4 mr-1" />Categories</TabsTrigger>
+            <TabsTrigger value="events"><CalendarClock className="h-4 w-4 mr-1" />Events</TabsTrigger>
+            <TabsTrigger value="highlights"><Sparkles className="h-4 w-4 mr-1" />Highlights</TabsTrigger>
             <TabsTrigger value="content"><Megaphone className="h-4 w-4 mr-1" />Announcements</TabsTrigger>
             <TabsTrigger value="promos"><Gift className="h-4 w-4 mr-1" />Promos</TabsTrigger>
             <TabsTrigger value="tokens"><Coins className="h-4 w-4 mr-1" />Token Requests</TabsTrigger>
+            <TabsTrigger value="notify"><Send className="h-4 w-4 mr-1" />Notifications</TabsTrigger>
+            <TabsTrigger value="support"><LifeBuoy className="h-4 w-4 mr-1" />Support</TabsTrigger>
+            <TabsTrigger value="leaderboard"><Trophy className="h-4 w-4 mr-1" />Leaderboard</TabsTrigger>
             <TabsTrigger value="calc"><Calculator className="h-4 w-4 mr-1" />Calculator</TabsTrigger>
+            <TabsTrigger value="ai"><Bot className="h-4 w-4 mr-1" />AI</TabsTrigger>
             <TabsTrigger value="settings"><Settings className="h-4 w-4 mr-1" />Settings</TabsTrigger>
             <TabsTrigger value="logs"><FileText className="h-4 w-4 mr-1" />Audit</TabsTrigger>
           </TabsList>
           <TabsContent value="users"><UserManagement /></TabsContent>
           <TabsContent value="matches"><MatchBuilder /></TabsContent>
+          <TabsContent value="categories"><CategoriesTab /></TabsContent>
+          <TabsContent value="events"><EventsTab /></TabsContent>
+          <TabsContent value="highlights"><HighlightsTab /></TabsContent>
           <TabsContent value="content"><Content /></TabsContent>
           <TabsContent value="promos"><Promos /></TabsContent>
           <TabsContent value="tokens"><TokenRequests /></TabsContent>
+          <TabsContent value="notify"><SendNotificationsTab /></TabsContent>
+          <TabsContent value="support"><SupportTab /></TabsContent>
+          <TabsContent value="leaderboard"><LeaderboardTab /></TabsContent>
           <TabsContent value="calc"><OddsCalculator /></TabsContent>
+          <TabsContent value="ai"><Card className="glass-gold p-10 text-center"><Bot className="h-12 w-12 mx-auto text-gold" /><h3 className="text-2xl font-black gradient-gold-text mt-3">AI Assistant</h3><p className="text-muted-foreground mt-2">Coming soon — match creation, smart announcements, and AI-powered support.</p></Card></TabsContent>
           <TabsContent value="settings"><SettingsTab /></TabsContent>
           <TabsContent value="logs"><Logs /></TabsContent>
         </Tabs>

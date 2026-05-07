@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { Crosshair, Skull, Trophy, Flame, Megaphone, ChevronRight, Lock } from "lucide-react";
+import { Crosshair, Skull, Trophy, Flame, Megaphone, ChevronRight, Lock, CalendarClock, Sparkles, Mail, Phone, MessageCircle } from "lucide-react";
 import { Layout } from "@/components/Layout";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -19,25 +19,38 @@ interface MatchRow {
   markets: MarketRow[];
 }
 interface Announcement { id: string; title: string; body: string | null; image_url: string | null; }
+interface EventRow { id: string; title: string; description: string | null; image_url: string | null; starts_at: string; }
+interface HighlightRow { id: string; title: string; media_url: string; media_type: string; }
+interface Settings { about_us: string | null; why_trust_us: string | null; terms_content: string | null; contact_email: string | null; contact_phone: string | null; contact_whatsapp: string | null; }
 
 const Index = () => {
   const [upcoming, setUpcoming] = useState<MatchRow[]>([]);
   const [live, setLive] = useState<MatchRow[]>([]);
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [annIdx, setAnnIdx] = useState(0);
+  const [events, setEvents] = useState<EventRow[]>([]);
+  const [highlights, setHighlights] = useState<HighlightRow[]>([]);
+  const [settings, setSettings] = useState<Settings | null>(null);
+  const [showTerms, setShowTerms] = useState(false);
   const { add, remove, selections } = useBetSlip();
 
   useEffect(() => {
     const sel = "id,name,start_time,status,home_score,away_score,location,home_team:teams!matches_home_team_id_fkey(name,logo_url),away_team:teams!matches_away_team_id_fkey(name,logo_url),markets(id,name,is_open,odds(id,label,value,is_winner))";
     const load = async () => {
-      const [u, l, a] = await Promise.all([
+      const [u, l, a, ev, hi, st] = await Promise.all([
         supabase.from("matches").select(sel).eq("status", "scheduled").order("start_time").limit(20),
         supabase.from("matches").select(sel).eq("status", "live").limit(10),
         supabase.from("announcements").select("id,title,body,image_url").eq("is_active", true).order("created_at", { ascending: false }).limit(5),
+        supabase.from("upcoming_events").select("*").eq("is_active", true).order("starts_at").limit(10),
+        supabase.from("highlights").select("*").eq("is_active", true).order("created_at", { ascending: false }).limit(12),
+        supabase.from("app_settings").select("about_us,why_trust_us,terms_content,contact_email,contact_phone,contact_whatsapp").eq("id", 1).maybeSingle(),
       ]);
       setUpcoming((u.data ?? []) as unknown as MatchRow[]);
       setLive((l.data ?? []) as unknown as MatchRow[]);
       setAnnouncements((a.data ?? []) as Announcement[]);
+      setEvents((ev.data ?? []) as EventRow[]);
+      setHighlights((hi.data ?? []) as HighlightRow[]);
+      setSettings((st.data ?? null) as Settings | null);
     };
     load();
     const ch = supabase.channel("home")
@@ -45,6 +58,9 @@ const Index = () => {
       .on("postgres_changes", { event: "*", schema: "public", table: "odds" }, load)
       .on("postgres_changes", { event: "*", schema: "public", table: "markets" }, load)
       .on("postgres_changes", { event: "*", schema: "public", table: "announcements" }, load)
+      .on("postgres_changes", { event: "*", schema: "public", table: "upcoming_events" }, load)
+      .on("postgres_changes", { event: "*", schema: "public", table: "highlights" }, load)
+      .on("postgres_changes", { event: "*", schema: "public", table: "app_settings" }, load)
       .subscribe();
     return () => { supabase.removeChannel(ch); };
   }, []);
@@ -134,6 +150,22 @@ const Index = () => {
         </div>
       </section>
 
+      {events.length > 0 && (
+        <section className="container mb-6 space-y-3">
+          {events.map((ev) => (
+            <div key={ev.id} className="relative overflow-hidden rounded-2xl glass-gold border border-gold/40">
+              {ev.image_url && <img src={ev.image_url} className="absolute inset-0 w-full h-full object-cover opacity-40" alt="" />}
+              <div className="relative p-5 md:p-7 bg-gradient-to-r from-background/80 via-background/40 to-transparent">
+                <div className="flex items-center gap-2 text-xs uppercase tracking-widest text-gold"><CalendarClock className="h-4 w-4" /> Upcoming Event</div>
+                <h3 className="text-2xl md:text-4xl font-black gradient-gold-text mt-1">{ev.title}</h3>
+                {ev.description && <p className="text-sm text-muted-foreground mt-1 max-w-2xl">{ev.description}</p>}
+                <div className="mt-3 text-2xl md:text-4xl font-black"><Countdown target={ev.starts_at} /></div>
+              </div>
+            </div>
+          ))}
+        </section>
+      )}
+
       {announcements.length > 0 && (
         <section className="container mb-8">
           <Card className="glass-gold p-4 flex items-center gap-4 overflow-hidden">
@@ -172,9 +204,53 @@ const Index = () => {
             <h2 className="text-lg font-bold mb-3 flex items-center gap-2"><Trophy className="h-5 w-5 text-gold" />Hot Now</h2>
             <Link to="/leaderboard"><Card className="glass-gold p-6 text-center"><div className="font-bold gradient-gold-text">View live leaderboard →</div></Card></Link>
           </section>
+          {highlights.length > 0 && (
+            <section>
+              <h2 className="text-lg font-bold mb-3 flex items-center gap-2"><Sparkles className="h-5 w-5 text-gold" />Highlights</h2>
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                {highlights.map((h) => (
+                  <Card key={h.id} className="glass overflow-hidden">
+                    {h.media_type === "video"
+                      ? <video src={h.media_url} controls className="w-full aspect-video object-cover" />
+                      : <img src={h.media_url} className="w-full aspect-video object-cover" alt={h.title} />}
+                    <div className="p-2 text-xs font-bold truncate">{h.title}</div>
+                  </Card>
+                ))}
+              </div>
+            </section>
+          )}
+          {(settings?.about_us || settings?.why_trust_us) && (
+            <section className="grid md:grid-cols-2 gap-3">
+              {settings?.about_us && <Card className="glass p-5"><h3 className="font-bold gradient-gold-text mb-2">About Us</h3><p className="text-sm whitespace-pre-wrap text-muted-foreground">{settings.about_us}</p></Card>}
+              {settings?.why_trust_us && <Card className="glass p-5"><h3 className="font-bold gradient-gold-text mb-2">Why Trust Us</h3><p className="text-sm whitespace-pre-wrap text-muted-foreground">{settings.why_trust_us}</p></Card>}
+            </section>
+          )}
+          {settings && (
+            <section>
+              <Card className="glass p-5">
+                <h3 className="font-bold gradient-gold-text mb-3">Contact</h3>
+                <div className="flex flex-wrap gap-3 text-sm">
+                  {settings.contact_email && <a className="flex items-center gap-1 text-gold hover:underline" href={`mailto:${settings.contact_email}`}><Mail className="h-4 w-4" />{settings.contact_email}</a>}
+                  {settings.contact_phone && <a className="flex items-center gap-1 text-gold hover:underline" href={`tel:${settings.contact_phone}`}><Phone className="h-4 w-4" />{settings.contact_phone}</a>}
+                  {settings.contact_whatsapp && <a className="flex items-center gap-1 text-gold hover:underline" href={`https://wa.me/${settings.contact_whatsapp.replace(/[^0-9]/g,'')}`} target="_blank" rel="noreferrer"><MessageCircle className="h-4 w-4" />WhatsApp</a>}
+                  {settings.terms_content && <button onClick={() => setShowTerms(true)} className="text-gold hover:underline">Terms & Conditions</button>}
+                </div>
+              </Card>
+            </section>
+          )}
         </div>
         <aside className="hidden lg:block"><BetSlipPanel /></aside>
       </div>
+
+      {showTerms && settings?.terms_content && (
+        <div onClick={() => setShowTerms(false)} className="fixed inset-0 z-[80] bg-black/70 backdrop-blur flex items-center justify-center p-4">
+          <div onClick={(e) => e.stopPropagation()} className="glass-gold max-w-2xl w-full max-h-[80vh] overflow-y-auto p-6 rounded-2xl">
+            <h3 className="text-xl font-bold gradient-gold-text mb-3">Terms & Conditions</h3>
+            <p className="whitespace-pre-wrap text-sm text-muted-foreground">{settings.terms_content}</p>
+            <Button onClick={() => setShowTerms(false)} className="btn-luxury mt-4 w-full">Close</Button>
+          </div>
+        </div>
+      )}
 
       {selections.length > 0 && (
         <div className="lg:hidden fixed bottom-20 left-2 right-2 z-30">
