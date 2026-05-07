@@ -5,11 +5,26 @@ import { Badge } from "@/components/ui/badge";
 import { useAuth, ROLE_COLORS, ROLE_LABELS } from "@/contexts/AuthContext";
 import { ParticleBackground } from "./ParticleBackground";
 import { MobileBottomNav } from "./MobileBottomNav";
-import { ReactNode } from "react";
+import { ReactNode, useEffect, useState } from "react";
+import { supabase } from "@/integrations/supabase/client";
 
 export const Layout = ({ children }: { children: ReactNode }) => {
   const { user, profile, roles, isAdmin, isMod, signOut } = useAuth();
   const nav = useNavigate();
+  const [unread, setUnread] = useState(0);
+
+  useEffect(() => {
+    if (!user) { setUnread(0); return; }
+    const load = async () => {
+      const { count } = await supabase.from("notifications").select("id", { count: "exact", head: true }).eq("user_id", user.id).eq("is_read", false);
+      setUnread(count ?? 0);
+    };
+    load();
+    const ch = supabase.channel(`bell-${user.id}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "notifications", filter: `user_id=eq.${user.id}` }, load)
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [user?.id]);
 
   return (
     <div className="relative min-h-screen">
@@ -43,8 +58,9 @@ export const Layout = ({ children }: { children: ReactNode }) => {
                   <span className="text-xs text-muted-foreground">Tokens</span>
                   <span className="text-sm font-bold text-gold">{profile.token_balance.toLocaleString()}</span>
                 </div>
-                <Link to="/notifications">
+                <Link to="/notifications" className="relative">
                   <Button variant="ghost" size="icon"><Bell className="h-4 w-4" /></Button>
+                  {unread > 0 && <span className="absolute top-1 right-1 min-w-[16px] h-4 px-1 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center">{unread > 99 ? "99+" : unread}</span>}
                 </Link>
                 <Link to="/profile">
                   <Button variant="ghost" size="sm" className="gap-2">
