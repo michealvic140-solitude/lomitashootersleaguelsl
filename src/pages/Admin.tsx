@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Shield, Users, Crosshair, Megaphone, Gift, Settings, FileText, Coins, Calculator, Trash2, Lock, AlertTriangle } from "lucide-react";
+import { Shield, Users, Crosshair, Megaphone, Gift, Settings, FileText, Coins, Calculator, Trash2, Lock, AlertTriangle, CalendarClock, Sparkles, ListChecks, Send, LifeBuoy, Trophy, Bot } from "lucide-react";
 import { useAuth, AppRole, ROLE_COLORS, ROLE_LABELS } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
@@ -23,6 +23,12 @@ const UserManagement = () => {
   const [users, setUsers] = useState<any[]>([]);
   const [rolesByUser, setRolesByUser] = useState<Record<string, AppRole[]>>({});
   const [search, setSearch] = useState("");
+  const [filter, setFilter] = useState<"all" | "banned" | "muted" | "restricted" | "recent" | "old">("all");
+  const [roleFilter, setRoleFilter] = useState<string>("all");
+  const [detail, setDetail] = useState<any | null>(null);
+  const [detailBets, setDetailBets] = useState<any[]>([]);
+  const [detailTx, setDetailTx] = useState<any[]>([]);
+  const [detailLogs, setDetailLogs] = useState<any[]>([]);
 
   const load = async () => {
     const { data: ps } = await supabase.from("profiles").select("*").order("created_at", { ascending: false }).limit(200);
@@ -35,6 +41,16 @@ const UserManagement = () => {
     setRolesByUser(map);
   };
   useEffect(() => { load(); }, []);
+
+  const openDetail = async (u: any) => {
+    setDetail(u);
+    const [b, t, l] = await Promise.all([
+      supabase.from("bets").select("*").eq("user_id", u.id).order("created_at", { ascending: false }).limit(50),
+      supabase.from("token_transactions").select("*").eq("user_id", u.id).order("created_at", { ascending: false }).limit(50),
+      supabase.from("audit_logs").select("*").eq("target_id", u.id).order("created_at", { ascending: false }).limit(50),
+    ]);
+    setDetailBets(b.data ?? []); setDetailTx(t.data ?? []); setDetailLogs(l.data ?? []);
+  };
 
   const toggleRole = async (uid: string, role: AppRole) => {
     const has = (rolesByUser[uid] ?? []).includes(role);
@@ -78,16 +94,43 @@ const UserManagement = () => {
     await load();
   };
 
-  const filtered = users.filter((u) => !search || (u.full_name + u.email + (u.gang_name ?? "")).toLowerCase().includes(search.toLowerCase()));
+  let filtered = users.filter((u) => !search || (u.full_name + u.email + (u.gang_name ?? "")).toLowerCase().includes(search.toLowerCase()));
+  if (filter === "banned") filtered = filtered.filter((u) => u.is_banned);
+  if (filter === "muted") filtered = filtered.filter((u) => u.is_muted);
+  if (filter === "restricted") filtered = filtered.filter((u) => u.is_restricted);
+  if (filter === "recent") filtered = [...filtered].sort((a, b) => +new Date(b.created_at) - +new Date(a.created_at));
+  if (filter === "old") filtered = [...filtered].sort((a, b) => +new Date(a.created_at) - +new Date(b.created_at));
+  if (roleFilter !== "all") filtered = filtered.filter((u) => (rolesByUser[u.id] ?? []).includes(roleFilter as AppRole));
 
   return (
     <div className="space-y-3">
-      <Input placeholder="Search by name, email, gang..." value={search} onChange={(e) => setSearch(e.target.value)} />
+      <div className="grid md:grid-cols-3 gap-2">
+        <Input placeholder="Search name, email, gang..." value={search} onChange={(e) => setSearch(e.target.value)} />
+        <Select value={filter} onValueChange={(v) => setFilter(v as any)}>
+          <SelectTrigger><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All users</SelectItem>
+            <SelectItem value="banned">Banned</SelectItem>
+            <SelectItem value="muted">Muted</SelectItem>
+            <SelectItem value="restricted">Restricted</SelectItem>
+            <SelectItem value="recent">Newest first</SelectItem>
+            <SelectItem value="old">Oldest first</SelectItem>
+          </SelectContent>
+        </Select>
+        <Select value={roleFilter} onValueChange={setRoleFilter}>
+          <SelectTrigger><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Any role</SelectItem>
+            {ROLES.map((r) => <SelectItem key={r} value={r}>{r}</SelectItem>)}
+          </SelectContent>
+        </Select>
+      </div>
+      <div className="text-xs text-muted-foreground">{filtered.length} of {users.length} users</div>
       {filtered.map((u) => (
         <Card key={u.id} className="glass p-4">
           <div className="flex items-start justify-between gap-3 flex-wrap">
             <div>
-              <div className="font-bold">{u.full_name}</div>
+              <button onClick={() => openDetail(u)} className="font-bold text-left hover:text-gold">{u.full_name}</button>
               <div className="text-xs text-muted-foreground">{u.email} {u.gang_name && <>· {u.gang_name} ({u.gang_type})</>}</div>
               <div className="text-xs text-gold mt-1">Tokens: {u.token_balance.toLocaleString()}</div>
               <div className="flex flex-wrap gap-1 mt-2">
@@ -108,9 +151,33 @@ const UserManagement = () => {
             <Button size="sm" variant="outline" onClick={() => setFlag(u.id, "is_banned", !u.is_banned, "ban_reason")}>{u.is_banned ? "Unban" : "Ban"}</Button>
             <Button size="sm" variant="outline" onClick={() => setFlag(u.id, "is_muted", !u.is_muted, "mute_reason")}>{u.is_muted ? "Unmute" : "Mute"}</Button>
             <Button size="sm" variant="outline" onClick={() => setFlag(u.id, "is_restricted", !u.is_restricted, "restrict_reason")}>{u.is_restricted ? "Unrestrict" : "Restrict bets"}</Button>
+            <Button size="sm" variant="outline" onClick={() => openDetail(u)}>View profile</Button>
           </div>
         </Card>
       ))}
+      {detail && (
+        <div onClick={() => setDetail(null)} className="fixed inset-0 z-[80] bg-black/70 backdrop-blur flex items-center justify-center p-4">
+          <div onClick={(e) => e.stopPropagation()} className="glass-gold max-w-2xl w-full max-h-[85vh] overflow-y-auto p-6 rounded-2xl space-y-3">
+            <h3 className="text-2xl font-black gradient-gold-text">{detail.full_name}</h3>
+            <div className="text-xs text-muted-foreground">{detail.email} · {detail.country ?? ""} · {detail.discord_username ?? ""} · {detail.phone ?? ""}</div>
+            <div className="text-xs">Server: {detail.server} · Gang: {detail.gang_name ?? "—"} ({detail.gang_type ?? "—"})</div>
+            <div className="text-sm text-gold">Tokens: {detail.token_balance.toLocaleString()}</div>
+            <div>
+              <h4 className="font-bold text-sm mt-3">Bets ({detailBets.length})</h4>
+              {detailBets.map((b) => <div key={b.id} className="text-xs flex justify-between"><span className="font-mono">{b.tracking_id}</span><span>{b.status} · stake {b.stake} · payout {b.potential_payout}</span></div>)}
+            </div>
+            <div>
+              <h4 className="font-bold text-sm mt-3">Transactions ({detailTx.length})</h4>
+              {detailTx.map((t) => <div key={t.id} className="text-xs flex justify-between"><span>{new Date(t.created_at).toLocaleString()} · {t.description ?? t.kind}</span><span className={Number(t.amount)>0?"text-emerald-400":"text-red-400"}>{Number(t.amount)>0?"+":""}{t.amount}</span></div>)}
+            </div>
+            <div>
+              <h4 className="font-bold text-sm mt-3">Audit ({detailLogs.length})</h4>
+              {detailLogs.map((l) => <div key={l.id} className="text-xs"><b className="text-gold">{l.action}</b> · {new Date(l.created_at).toLocaleString()}</div>)}
+            </div>
+            <Button onClick={() => setDetail(null)} className="btn-luxury w-full">Close</Button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
