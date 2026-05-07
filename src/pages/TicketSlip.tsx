@@ -17,7 +17,7 @@ const TicketSlip = () => {
 
   const load = () => {
     if (!id) return;
-    supabase.from("bets").select("*,bet_selections(*,match:matches(name,home_score,away_score,status))").eq("id", id).maybeSingle()
+    supabase.from("bets").select("*,bet_selections(*,odd:odds(is_winner),match:matches(name,home_score,away_score,status,home_team:teams!matches_home_team_id_fkey(name),away_team:teams!matches_away_team_id_fkey(name)))").eq("id", id).maybeSingle()
       .then(({ data }) => setBet(data));
   };
   useEffect(load, [id]);
@@ -62,9 +62,18 @@ const TicketSlip = () => {
           <div className="space-y-2">
             {bet.bet_selections?.map((s: any) => (
               <div key={s.id} className="p-3 glass rounded text-sm">
-                <div className="font-bold">{s.match?.name}</div>
-                <div className="text-muted-foreground">{s.selection_label} @ <span className="text-gold">{Number(s.locked_odds).toFixed(2)}</span></div>
-                {s.match?.status === "ended" && <div className="text-xs">Final: {s.match.home_score} - {s.match.away_score}</div>}
+                <div className="flex justify-between items-start gap-2">
+                  <div>
+                    <div className="font-bold">{s.match?.home_team?.name ?? "?"} <span className="text-muted-foreground">vs</span> {s.match?.away_team?.name ?? "?"}</div>
+                    <div className="text-xs text-muted-foreground">{s.match?.name}</div>
+                    <div className="mt-1">Pick: <b>{s.selection_label}</b> @ <span className="text-gold">{Number(s.locked_odds).toFixed(2)}</span></div>
+                    {s.match?.status === "live" && <div className="text-xs text-red-400 font-bold">LIVE {s.match.home_score}-{s.match.away_score}</div>}
+                    {s.match?.status === "ended" && <div className="text-xs">Final: {s.match.home_score} - {s.match.away_score}</div>}
+                  </div>
+                  {s.odd?.is_winner === true && <Badge className="bg-emerald-600">WON</Badge>}
+                  {s.odd?.is_winner === false && <Badge variant="destructive">LOST</Badge>}
+                  {s.odd?.is_winner == null && s.match?.status !== "ended" && <Badge variant="outline">Pending</Badge>}
+                </div>
               </div>
             ))}
           </div>
