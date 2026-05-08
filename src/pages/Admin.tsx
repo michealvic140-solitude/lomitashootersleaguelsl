@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Shield, Users, Crosshair, Megaphone, Gift, Settings, FileText, Coins, Calculator, Trash2, Lock, AlertTriangle, CalendarClock, Sparkles, ListChecks, Send, LifeBuoy, Trophy, Bot } from "lucide-react";
+import { Shield, Users, Crosshair, Megaphone, Gift, Settings, FileText, Coins, Calculator, Trash2, Lock, AlertTriangle, CalendarClock, Sparkles, ListChecks, Send, LifeBuoy, Trophy, Bot, Banknote } from "lucide-react";
 import { useAuth, AppRole, ROLE_COLORS, ROLE_LABELS } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
