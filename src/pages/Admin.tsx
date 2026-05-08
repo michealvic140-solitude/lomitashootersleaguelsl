@@ -600,6 +600,7 @@ const SettingsTab = () => {
 const Logs = () => {
   const [logs, setLogs] = useState<any[]>([]);
   const [profiles, setProfiles] = useState<Record<string, string>>({});
+  const [actionFilter, setActionFilter] = useState<string>("");
   useEffect(() => {
     supabase.from("audit_logs").select("*").order("created_at", { ascending: false }).limit(200).then(async ({ data }) => {
       setLogs(data ?? []);
@@ -612,20 +613,50 @@ const Logs = () => {
       }
     });
   }, []);
+  const ACTION_LABELS: Record<string, string> = {
+    role_assign: "Role assigned", role_remove: "Role removed",
+    is_banned_true: "User banned", is_banned_false: "User unbanned",
+    is_muted_true: "User muted", is_muted_false: "User unmuted",
+    is_restricted_true: "Bets restricted", is_restricted_false: "Bets unrestricted",
+    tokens_adjust: "Token adjustment",
+    tokens_request_approve: "Token request approved",
+    tokens_request_deny: "Token request denied",
+    withdrawal_approve: "Withdrawal approved",
+    withdrawal_decline: "Withdrawal declined",
+    notification_send: "Notification broadcast",
+    emergency_wipe_all_tokens: "Emergency: all tokens wiped",
+  };
+  const human = (a: string) => ACTION_LABELS[a] ?? a.replace(/_/g, " ");
+  const fmtMeta = (m: any) => {
+    if (!m || typeof m !== "object") return null;
+    return Object.entries(m).filter(([,v])=>v!==null && v!=="" ).map(([k,v]) => (
+      <span key={k} className="mr-3"><b className="text-gold">{k}:</b> {String(v)}</span>
+    ));
+  };
+  const filtered = logs.filter((l) => !actionFilter || human(l.action).toLowerCase().includes(actionFilter.toLowerCase()) || (profiles[l.actor_id]?.toLowerCase().includes(actionFilter.toLowerCase())));
   return (
-    <div className="space-y-1">
-      {logs.map((l) => (
-        <Card key={l.id} className="glass p-3 text-xs">
-          <div className="flex justify-between flex-wrap gap-2">
-            <div>
-              <div><span className="text-gold font-bold">{l.action}</span> by <b>{profiles[l.actor_id] ?? l.actor_id?.slice(0, 8) ?? "system"}</b></div>
-              {l.target_id && <div className="text-muted-foreground">Target: {l.target_type}/{profiles[l.target_id] ?? l.target_id?.slice(0, 8)}</div>}
-              {l.metadata && <pre className="text-[10px] text-muted-foreground mt-1 overflow-x-auto">{JSON.stringify(l.metadata, null, 2)}</pre>}
-            </div>
-            <span className="text-muted-foreground whitespace-nowrap">{new Date(l.created_at).toLocaleString()}</span>
-          </div>
-        </Card>
-      ))}
+    <div className="space-y-2">
+      <Input placeholder="Filter by action or actor..." value={actionFilter} onChange={(e)=>setActionFilter(e.target.value)} />
+      <Card className="glass overflow-x-auto">
+        <table className="w-full text-xs">
+          <thead className="text-left text-muted-foreground">
+            <tr className="border-b border-primary/20">
+              <th className="p-2">When</th><th className="p-2">Action</th><th className="p-2">Actor</th><th className="p-2">Target</th><th className="p-2">Details</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filtered.map((l) => (
+              <tr key={l.id} className="border-b border-border/40 hover:bg-secondary/30">
+                <td className="p-2 whitespace-nowrap text-muted-foreground">{new Date(l.created_at).toLocaleString()}</td>
+                <td className="p-2 font-bold text-gold">{human(l.action)}</td>
+                <td className="p-2">{profiles[l.actor_id] ?? "system"}</td>
+                <td className="p-2">{l.target_id ? `${l.target_type ?? ""} · ${profiles[l.target_id] ?? l.target_id?.slice(0,8)}` : "—"}</td>
+                <td className="p-2 text-muted-foreground">{fmtMeta(l.metadata)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </Card>
     </div>
   );
 };
