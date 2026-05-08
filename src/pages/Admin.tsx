@@ -586,6 +586,25 @@ const SettingsTab = () => {
         <div><Label>Phone</Label><Input value={s.contact_phone ?? ""} onChange={(e) => setS({ ...s, contact_phone: e.target.value })} /></div>
         <div><Label>WhatsApp</Label><Input value={s.contact_whatsapp ?? ""} onChange={(e) => setS({ ...s, contact_whatsapp: e.target.value })} /></div>
       </div>
+      <div className="grid md:grid-cols-2 gap-2">
+        <div><Label>Minimum stake (tokens)</Label><Input type="number" value={s.min_stake ?? 2000000} onChange={(e) => setS({ ...s, min_stake: parseInt(e.target.value || "0", 10) })} /></div>
+      </div>
+      <div className="border-t border-primary/20 pt-3 space-y-2">
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="font-bold gradient-gold-text">Pop-out advertisement</div>
+            <div className="text-xs text-muted-foreground">Big card that appears on the homepage.</div>
+          </div>
+          <button onClick={() => setS({ ...s, popup_ad_enabled: !s.popup_ad_enabled })}
+            className={`relative h-7 w-12 rounded-full transition ${s.popup_ad_enabled ? "bg-emerald-500" : "bg-secondary"}`}>
+            <span className={`absolute top-1 h-5 w-5 rounded-full bg-background transition ${s.popup_ad_enabled ? "left-6" : "left-1"}`} />
+          </button>
+        </div>
+        <Input placeholder="Ad title" value={s.popup_ad_title ?? ""} onChange={(e) => setS({ ...s, popup_ad_title: e.target.value })} />
+        <Textarea placeholder="Ad body" value={s.popup_ad_body ?? ""} onChange={(e) => setS({ ...s, popup_ad_body: e.target.value })} />
+        <Input placeholder="Image URL (optional)" value={s.popup_ad_image_url ?? ""} onChange={(e) => setS({ ...s, popup_ad_image_url: e.target.value })} />
+        <Input placeholder="Click-through link (optional)" value={s.popup_ad_link ?? ""} onChange={(e) => setS({ ...s, popup_ad_link: e.target.value })} />
+      </div>
       <Button onClick={save} className="btn-luxury">Save settings</Button>
     </Card>
     <Card className="glass p-4 border border-destructive/40">
