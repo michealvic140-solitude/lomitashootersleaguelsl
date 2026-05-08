@@ -1,25 +1,33 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { Layout } from "@/components/Layout";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, X, AlertTriangle } from "lucide-react";
+import { ArrowLeft, X, AlertTriangle, ArrowUp, ArrowDown, Plus } from "lucide-react";
 import { useBetSlip } from "@/contexts/BetSlipContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { useConfirm } from "@/components/ConfirmModal";
 
 const MAX_PAYOUT = 60_000_000;
 const QUICK = [100, 200, 500, 1000, 5000];
 
 const Checkout = () => {
-  const { selections, remove, clear, totalOdds } = useBetSlip();
+  const { selections, remove, clear, reorder, totalOdds } = useBetSlip();
   const { user, profile, refresh } = useAuth();
+  const confirm = useConfirm();
   const nav = useNavigate();
   const [stake, setStake] = useState("");
   const [loading, setLoading] = useState(false);
+  const [minStake, setMinStake] = useState<number>(2_000_000);
+
+  useEffect(() => {
+    supabase.from("app_settings").select("min_stake").eq("id", 1).maybeSingle()
+      .then(({ data }) => { if (data?.min_stake != null) setMinStake(Number(data.min_stake)); });
+  }, []);
 
   const stakeNum = Math.max(0, parseInt(stake || "0", 10));
   const payout = Math.min(MAX_PAYOUT, Math.round(stakeNum * totalOdds));
@@ -30,8 +38,16 @@ const Checkout = () => {
     if (profile.is_restricted) return toast.error("Your betting is restricted");
     if (profile.is_banned) return toast.error("Account banned");
     if (selections.length === 0) return toast.error("Add selections");
-    if (!book && stakeNum <= 0) return toast.error("Enter a stake");
+    if (!book && stakeNum < minStake) return toast.error(`Minimum stake is ${minStake.toLocaleString()} tokens`);
     if (!book && stakeNum > profile.token_balance) return toast.error("Insufficient tokens");
+    const r = await confirm({
+      title: book ? "Save booking?" : "Place bet?",
+      description: book
+        ? `${selections.length} selection(s) · share your code with friends.`
+        : `Stake ${stakeNum.toLocaleString()} tokens · potential payout ${payout.toLocaleString()}.`,
+      confirmLabel: book ? "Save booking" : "Place bet",
+    });
+    if (!r.confirmed) return;
     setLoading(true);
 
     const finalStake = book ? 0 : stakeNum;
@@ -71,7 +87,7 @@ const Checkout = () => {
           </Card>
         ) : (
           <Card className="glass p-4 space-y-3">
-            {selections.map((s) => (
+            {selections.map((s, idx) => (
               <div key={s.odd_id} className="glass p-3 rounded">
                 <div className="flex justify-between items-start gap-2">
                   <div className="min-w-0 flex-1">
@@ -79,20 +95,31 @@ const Checkout = () => {
                     <div className="text-xs text-muted-foreground">{s.market_name}</div>
                     <div className="text-xs mt-1"><span className="text-foreground">{s.selection_label}</span></div>
                   </div>
-                  <div className="text-right">
+                  <div className="text-right flex flex-col items-end gap-1">
                     <div className="text-gold font-bold">{s.odds.toFixed(2)}</div>
-                    <button onClick={() => remove(s.odd_id)} className="text-muted-foreground hover:text-destructive"><X className="h-4 w-4" /></button>
+                    <div className="flex gap-1">
+                      <button disabled={idx===0} onClick={() => reorder(idx, idx-1)} className="text-muted-foreground hover:text-gold disabled:opacity-30"><ArrowUp className="h-3.5 w-3.5" /></button>
+                      <button disabled={idx===selections.length-1} onClick={() => reorder(idx, idx+1)} className="text-muted-foreground hover:text-gold disabled:opacity-30"><ArrowDown className="h-3.5 w-3.5" /></button>
+                      <button onClick={() => remove(s.odd_id)} className="text-muted-foreground hover:text-destructive"><X className="h-4 w-4" /></button>
+                    </div>
                   </div>
                 </div>
               </div>
             ))}
+            <Link to="/" className="block"><Button variant="outline" size="sm" className="w-full"><Plus className="h-3 w-3" />Add more selections</Button></Link>
 
             <div className="border-t border-primary/20 pt-3 space-y-3">
               <div className="flex justify-between text-sm">
                 <span className="text-muted-foreground">Total Odds</span>
                 <span className="text-gold font-bold text-lg">{totalOdds.toFixed(2)}</span>
               </div>
-              <Input type="number" placeholder="Enter stake (tokens)" value={stake} onChange={(e) => setStake(e.target.value)} className="text-lg" />
+              <div>
+                <Input type="number" placeholder={`Enter stake (min ${minStake.toLocaleString()})`} value={stake} onChange={(e) => setStake(e.target.value)} className="text-lg" />
+                <div className="text-[10px] text-muted-foreground mt-1">Minimum stake: {minStake.toLocaleString()} tokens</div>
+              </div>
+              {stakeNum > 0 && stakeNum < minStake && (
+                <div className="text-xs text-destructive">Below minimum stake.</div>
+              )}
               <div className="flex flex-wrap gap-2">
                 {QUICK.map((q) => (
                   <Button key={q} size="sm" variant="outline" onClick={() => setStake(String(q))}>{q}</Button>
