@@ -926,6 +926,7 @@ const AdminInner = () => {
             <TabsTrigger value="content"><Megaphone className="h-4 w-4 mr-1" />Announcements</TabsTrigger>
             <TabsTrigger value="promos"><Gift className="h-4 w-4 mr-1" />Promos</TabsTrigger>
             <TabsTrigger value="tokens"><Coins className="h-4 w-4 mr-1" />Token Requests</TabsTrigger>
+            <TabsTrigger value="withdrawals"><Banknote className="h-4 w-4 mr-1" />Withdrawals</TabsTrigger>
             <TabsTrigger value="notify"><Send className="h-4 w-4 mr-1" />Notifications</TabsTrigger>
             <TabsTrigger value="support"><LifeBuoy className="h-4 w-4 mr-1" />Support</TabsTrigger>
             <TabsTrigger value="leaderboard"><Trophy className="h-4 w-4 mr-1" />Leaderboard</TabsTrigger>
@@ -942,6 +943,7 @@ const AdminInner = () => {
           <TabsContent value="content"><Content /></TabsContent>
           <TabsContent value="promos"><Promos /></TabsContent>
           <TabsContent value="tokens"><TokenRequests /></TabsContent>
+          <TabsContent value="withdrawals"><WithdrawalsTab /></TabsContent>
           <TabsContent value="notify"><SendNotificationsTab /></TabsContent>
           <TabsContent value="support"><SupportTab /></TabsContent>
           <TabsContent value="leaderboard"><LeaderboardTab /></TabsContent>
