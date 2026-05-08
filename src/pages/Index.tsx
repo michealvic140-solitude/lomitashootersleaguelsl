@@ -21,7 +21,7 @@ interface MatchRow {
 interface Announcement { id: string; title: string; body: string | null; image_url: string | null; }
 interface EventRow { id: string; title: string; description: string | null; image_url: string | null; starts_at: string; }
 interface HighlightRow { id: string; title: string; media_url: string; media_type: string; }
-interface Settings { about_us: string | null; why_trust_us: string | null; terms_content: string | null; contact_email: string | null; contact_phone: string | null; contact_whatsapp: string | null; }
+interface Settings { about_us: string | null; why_trust_us: string | null; terms_content: string | null; contact_email: string | null; contact_phone: string | null; contact_whatsapp: string | null; popup_ad_enabled?: boolean; popup_ad_title?: string | null; popup_ad_body?: string | null; popup_ad_image_url?: string | null; popup_ad_link?: string | null; }
 
 const Index = () => {
   const [upcoming, setUpcoming] = useState<MatchRow[]>([]);
@@ -32,6 +32,7 @@ const Index = () => {
   const [highlights, setHighlights] = useState<HighlightRow[]>([]);
   const [settings, setSettings] = useState<Settings | null>(null);
   const [showTerms, setShowTerms] = useState(false);
+  const [showPopup, setShowPopup] = useState(false);
   const { add, remove, selections } = useBetSlip();
 
   useEffect(() => {
@@ -43,7 +44,7 @@ const Index = () => {
         supabase.from("announcements").select("id,title,body,image_url").eq("is_active", true).order("created_at", { ascending: false }).limit(5),
         supabase.from("upcoming_events").select("*").eq("is_active", true).order("starts_at").limit(10),
         supabase.from("highlights").select("*").eq("is_active", true).order("created_at", { ascending: false }).limit(12),
-        supabase.from("app_settings").select("about_us,why_trust_us,terms_content,contact_email,contact_phone,contact_whatsapp").eq("id", 1).maybeSingle(),
+        supabase.from("app_settings").select("*").eq("id", 1).maybeSingle(),
       ]);
       setUpcoming((u.data ?? []) as unknown as MatchRow[]);
       setLive((l.data ?? []) as unknown as MatchRow[]);
@@ -51,6 +52,10 @@ const Index = () => {
       setEvents((ev.data ?? []) as EventRow[]);
       setHighlights((hi.data ?? []) as HighlightRow[]);
       setSettings((st.data ?? null) as Settings | null);
+      if (st.data?.popup_ad_enabled && (st.data?.popup_ad_title || st.data?.popup_ad_body)) {
+        const dismissed = sessionStorage.getItem("lsl_popup_dismissed");
+        if (!dismissed) setShowPopup(true);
+      }
     };
     load();
     const ch = supabase.channel("home")
@@ -248,6 +253,24 @@ const Index = () => {
             <h3 className="text-xl font-bold gradient-gold-text mb-3">Terms & Conditions</h3>
             <p className="whitespace-pre-wrap text-sm text-muted-foreground">{settings.terms_content}</p>
             <Button onClick={() => setShowTerms(false)} className="btn-luxury mt-4 w-full">Close</Button>
+          </div>
+        </div>
+      )}
+
+      {showPopup && settings?.popup_ad_enabled && (
+        <div onClick={() => { setShowPopup(false); sessionStorage.setItem("lsl_popup_dismissed", "1"); }} className="fixed inset-0 z-[90] bg-black/80 backdrop-blur flex items-center justify-center p-4">
+          <div onClick={(e) => e.stopPropagation()} className="glass-gold max-w-3xl w-full rounded-3xl overflow-hidden border border-gold/40 relative">
+            <button onClick={() => { setShowPopup(false); sessionStorage.setItem("lsl_popup_dismissed", "1"); }} className="absolute top-3 right-3 z-10 h-9 w-9 rounded-full bg-background/80 border border-gold/40 flex items-center justify-center text-gold">×</button>
+            {settings.popup_ad_image_url && <img src={settings.popup_ad_image_url} className="w-full max-h-[50vh] object-cover" alt="" />}
+            <div className="p-6 md:p-8">
+              <h3 className="text-2xl md:text-4xl font-black gradient-gold-text">{settings.popup_ad_title}</h3>
+              {settings.popup_ad_body && <p className="text-sm md:text-base text-muted-foreground mt-3 whitespace-pre-wrap">{settings.popup_ad_body}</p>}
+              {settings.popup_ad_link && (
+                <a href={settings.popup_ad_link} target="_blank" rel="noreferrer">
+                  <Button className="btn-luxury mt-4">Learn more</Button>
+                </a>
+              )}
+            </div>
           </div>
         </div>
       )}
