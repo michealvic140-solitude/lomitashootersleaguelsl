@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Shield, Users, Crosshair, Megaphone, Gift, Settings, FileText, Coins, Calculator, Trash2, Lock, AlertTriangle, CalendarClock, Sparkles, ListChecks, Send, LifeBuoy, Trophy, Bot } from "lucide-react";
+import { Shield, Users, Crosshair, Megaphone, Gift, Settings, FileText, Coins, Calculator, Trash2, Lock, AlertTriangle, CalendarClock, Sparkles, ListChecks, Send, LifeBuoy, Trophy, Bot, Banknote } from "lucide-react";
 import { useAuth, AppRole, ROLE_COLORS, ROLE_LABELS } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
@@ -586,6 +586,25 @@ const SettingsTab = () => {
         <div><Label>Phone</Label><Input value={s.contact_phone ?? ""} onChange={(e) => setS({ ...s, contact_phone: e.target.value })} /></div>
         <div><Label>WhatsApp</Label><Input value={s.contact_whatsapp ?? ""} onChange={(e) => setS({ ...s, contact_whatsapp: e.target.value })} /></div>
       </div>
+      <div className="grid md:grid-cols-2 gap-2">
+        <div><Label>Minimum stake (tokens)</Label><Input type="number" value={s.min_stake ?? 2000000} onChange={(e) => setS({ ...s, min_stake: parseInt(e.target.value || "0", 10) })} /></div>
+      </div>
+      <div className="border-t border-primary/20 pt-3 space-y-2">
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="font-bold gradient-gold-text">Pop-out advertisement</div>
+            <div className="text-xs text-muted-foreground">Big card that appears on the homepage.</div>
+          </div>
+          <button onClick={() => setS({ ...s, popup_ad_enabled: !s.popup_ad_enabled })}
+            className={`relative h-7 w-12 rounded-full transition ${s.popup_ad_enabled ? "bg-emerald-500" : "bg-secondary"}`}>
+            <span className={`absolute top-1 h-5 w-5 rounded-full bg-background transition ${s.popup_ad_enabled ? "left-6" : "left-1"}`} />
+          </button>
+        </div>
+        <Input placeholder="Ad title" value={s.popup_ad_title ?? ""} onChange={(e) => setS({ ...s, popup_ad_title: e.target.value })} />
+        <Textarea placeholder="Ad body" value={s.popup_ad_body ?? ""} onChange={(e) => setS({ ...s, popup_ad_body: e.target.value })} />
+        <Input placeholder="Image URL (optional)" value={s.popup_ad_image_url ?? ""} onChange={(e) => setS({ ...s, popup_ad_image_url: e.target.value })} />
+        <Input placeholder="Click-through link (optional)" value={s.popup_ad_link ?? ""} onChange={(e) => setS({ ...s, popup_ad_link: e.target.value })} />
+      </div>
       <Button onClick={save} className="btn-luxury">Save settings</Button>
     </Card>
     <Card className="glass p-4 border border-destructive/40">
@@ -600,6 +619,7 @@ const SettingsTab = () => {
 const Logs = () => {
   const [logs, setLogs] = useState<any[]>([]);
   const [profiles, setProfiles] = useState<Record<string, string>>({});
+  const [actionFilter, setActionFilter] = useState<string>("");
   useEffect(() => {
     supabase.from("audit_logs").select("*").order("created_at", { ascending: false }).limit(200).then(async ({ data }) => {
       setLogs(data ?? []);
@@ -612,20 +632,50 @@ const Logs = () => {
       }
     });
   }, []);
+  const ACTION_LABELS: Record<string, string> = {
+    role_assign: "Role assigned", role_remove: "Role removed",
+    is_banned_true: "User banned", is_banned_false: "User unbanned",
+    is_muted_true: "User muted", is_muted_false: "User unmuted",
+    is_restricted_true: "Bets restricted", is_restricted_false: "Bets unrestricted",
+    tokens_adjust: "Token adjustment",
+    tokens_request_approve: "Token request approved",
+    tokens_request_deny: "Token request denied",
+    withdrawal_approve: "Withdrawal approved",
+    withdrawal_decline: "Withdrawal declined",
+    notification_send: "Notification broadcast",
+    emergency_wipe_all_tokens: "Emergency: all tokens wiped",
+  };
+  const human = (a: string) => ACTION_LABELS[a] ?? a.replace(/_/g, " ");
+  const fmtMeta = (m: any) => {
+    if (!m || typeof m !== "object") return null;
+    return Object.entries(m).filter(([,v])=>v!==null && v!=="" ).map(([k,v]) => (
+      <span key={k} className="mr-3"><b className="text-gold">{k}:</b> {String(v)}</span>
+    ));
+  };
+  const filtered = logs.filter((l) => !actionFilter || human(l.action).toLowerCase().includes(actionFilter.toLowerCase()) || (profiles[l.actor_id]?.toLowerCase().includes(actionFilter.toLowerCase())));
   return (
-    <div className="space-y-1">
-      {logs.map((l) => (
-        <Card key={l.id} className="glass p-3 text-xs">
-          <div className="flex justify-between flex-wrap gap-2">
-            <div>
-              <div><span className="text-gold font-bold">{l.action}</span> by <b>{profiles[l.actor_id] ?? l.actor_id?.slice(0, 8) ?? "system"}</b></div>
-              {l.target_id && <div className="text-muted-foreground">Target: {l.target_type}/{profiles[l.target_id] ?? l.target_id?.slice(0, 8)}</div>}
-              {l.metadata && <pre className="text-[10px] text-muted-foreground mt-1 overflow-x-auto">{JSON.stringify(l.metadata, null, 2)}</pre>}
-            </div>
-            <span className="text-muted-foreground whitespace-nowrap">{new Date(l.created_at).toLocaleString()}</span>
-          </div>
-        </Card>
-      ))}
+    <div className="space-y-2">
+      <Input placeholder="Filter by action or actor..." value={actionFilter} onChange={(e)=>setActionFilter(e.target.value)} />
+      <Card className="glass overflow-x-auto">
+        <table className="w-full text-xs">
+          <thead className="text-left text-muted-foreground">
+            <tr className="border-b border-primary/20">
+              <th className="p-2">When</th><th className="p-2">Action</th><th className="p-2">Actor</th><th className="p-2">Target</th><th className="p-2">Details</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filtered.map((l) => (
+              <tr key={l.id} className="border-b border-border/40 hover:bg-secondary/30">
+                <td className="p-2 whitespace-nowrap text-muted-foreground">{new Date(l.created_at).toLocaleString()}</td>
+                <td className="p-2 font-bold text-gold">{human(l.action)}</td>
+                <td className="p-2">{profiles[l.actor_id] ?? "system"}</td>
+                <td className="p-2">{l.target_id ? `${l.target_type ?? ""} · ${profiles[l.target_id] ?? l.target_id?.slice(0,8)}` : "—"}</td>
+                <td className="p-2 text-muted-foreground">{fmtMeta(l.metadata)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </Card>
     </div>
   );
 };
@@ -877,6 +927,73 @@ const LeaderboardTab = () => {
   );
 };
 
+const WithdrawalsTab = () => {
+  const { user: me } = useAuth();
+  const confirm = useConfirm();
+  const [items, setItems] = useState<any[]>([]);
+  const load = () => supabase.from("withdrawal_requests").select("*,profile:profiles(full_name,email,token_balance)").order("created_at", { ascending: false }).then(({ data }) => setItems(data ?? []));
+  useEffect(() => {
+    load();
+    const ch = supabase.channel("admin-withdrawals").on("postgres_changes", { event: "*", schema: "public", table: "withdrawal_requests" }, load).subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, []);
+  const decide = async (r: any, approve: boolean) => {
+    const res = await confirm({
+      title: approve ? "Approve withdrawal" : "Decline withdrawal",
+      description: `${r.amount.toLocaleString()} tokens · ${r.in_game_name} (${r.gang_name})`,
+      destructive: !approve, reasonRequired: true,
+      confirmLabel: approve ? "Approve" : "Decline",
+    });
+    if (!res.confirmed) return;
+    const note = res.reason ?? "";
+    await supabase.from("withdrawal_requests").update({
+      status: approve ? "approved" : "declined",
+      reviewed_by: me?.id, reviewed_at: new Date().toISOString(), review_note: note,
+    }).eq("id", r.id);
+    if (!approve) {
+      // refund
+      await supabase.from("profiles").update({ token_balance: (r.profile?.token_balance ?? 0) + Number(r.amount) }).eq("id", r.user_id);
+    }
+    await supabase.from("notifications").insert({
+      user_id: r.user_id,
+      title: approve ? "Withdrawal approved ✅" : "Withdrawal declined",
+      body: approve
+        ? `Your withdrawal of ${Number(r.amount).toLocaleString()} tokens is approved. ${note}`
+        : `Your withdrawal was declined and refunded. Reason: ${note}`,
+      link: "/dashboard",
+    });
+    await supabase.from("audit_logs").insert({
+      actor_id: me?.id, action: approve ? "withdrawal_approve" : "withdrawal_decline",
+      target_type: "user", target_id: r.user_id, metadata: { amount: r.amount, ign: r.in_game_name, gang: r.gang_name, note },
+    });
+    load();
+  };
+  return (
+    <div className="space-y-2">
+      {items.length === 0 && <p className="text-sm text-muted-foreground">No withdrawal requests.</p>}
+      {items.map((r) => (
+        <Card key={r.id} className="glass p-3">
+          <div className="flex justify-between flex-wrap gap-2">
+            <div className="min-w-0">
+              <div className="font-bold">{r.in_game_name} · <span className="text-gold">{Number(r.amount).toLocaleString()}</span></div>
+              <div className="text-xs text-muted-foreground">Gang: {r.gang_name} · {r.profile?.full_name} ({r.profile?.email})</div>
+              <div className="text-xs text-muted-foreground">{new Date(r.created_at).toLocaleString()} {r.ticket_tracking_id && <>· Ticket {r.ticket_tracking_id}</>}</div>
+              {r.review_note && <div className="text-xs mt-1 italic">"{r.review_note}"</div>}
+            </div>
+            <div className="flex flex-col gap-1 items-end">
+              <Badge variant={r.status === "approved" ? "default" : r.status === "declined" ? "destructive" : "outline"}>{r.status}</Badge>
+              {r.status === "pending" && <>
+                <Button size="sm" onClick={() => decide(r, true)} className="btn-luxury">Approve</Button>
+                <Button size="sm" variant="destructive" onClick={() => decide(r, false)}>Decline</Button>
+              </>}
+            </div>
+          </div>
+        </Card>
+      ))}
+    </div>
+  );
+};
+
 const AdminInner = () => {
   const { isAdmin, loading } = useAuth();
   if (loading) return <Layout><div className="container py-12">Loading...</div></Layout>;
@@ -895,6 +1012,7 @@ const AdminInner = () => {
             <TabsTrigger value="content"><Megaphone className="h-4 w-4 mr-1" />Announcements</TabsTrigger>
             <TabsTrigger value="promos"><Gift className="h-4 w-4 mr-1" />Promos</TabsTrigger>
             <TabsTrigger value="tokens"><Coins className="h-4 w-4 mr-1" />Token Requests</TabsTrigger>
+            <TabsTrigger value="withdrawals"><Banknote className="h-4 w-4 mr-1" />Withdrawals</TabsTrigger>
             <TabsTrigger value="notify"><Send className="h-4 w-4 mr-1" />Notifications</TabsTrigger>
             <TabsTrigger value="support"><LifeBuoy className="h-4 w-4 mr-1" />Support</TabsTrigger>
             <TabsTrigger value="leaderboard"><Trophy className="h-4 w-4 mr-1" />Leaderboard</TabsTrigger>
@@ -911,6 +1029,7 @@ const AdminInner = () => {
           <TabsContent value="content"><Content /></TabsContent>
           <TabsContent value="promos"><Promos /></TabsContent>
           <TabsContent value="tokens"><TokenRequests /></TabsContent>
+          <TabsContent value="withdrawals"><WithdrawalsTab /></TabsContent>
           <TabsContent value="notify"><SendNotificationsTab /></TabsContent>
           <TabsContent value="support"><SupportTab /></TabsContent>
           <TabsContent value="leaderboard"><LeaderboardTab /></TabsContent>

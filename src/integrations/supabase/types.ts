@@ -77,6 +77,12 @@ export type Database = {
           id: number
           maintenance_message: string | null
           maintenance_mode: boolean
+          min_stake: number
+          popup_ad_body: string | null
+          popup_ad_enabled: boolean
+          popup_ad_image_url: string | null
+          popup_ad_link: string | null
+          popup_ad_title: string | null
           terms_content: string | null
           updated_at: string
           why_trust_us: string | null
@@ -89,6 +95,12 @@ export type Database = {
           id?: number
           maintenance_message?: string | null
           maintenance_mode?: boolean
+          min_stake?: number
+          popup_ad_body?: string | null
+          popup_ad_enabled?: boolean
+          popup_ad_image_url?: string | null
+          popup_ad_link?: string | null
+          popup_ad_title?: string | null
           terms_content?: string | null
           updated_at?: string
           why_trust_us?: string | null
@@ -101,6 +113,12 @@ export type Database = {
           id?: number
           maintenance_message?: string | null
           maintenance_mode?: boolean
+          min_stake?: number
+          popup_ad_body?: string | null
+          popup_ad_enabled?: boolean
+          popup_ad_image_url?: string | null
+          popup_ad_link?: string | null
+          popup_ad_title?: string | null
           terms_content?: string | null
           updated_at?: string
           why_trust_us?: string | null
@@ -895,6 +913,48 @@ export type Database = {
         }
         Relationships: []
       }
+      withdrawal_requests: {
+        Row: {
+          amount: number
+          created_at: string
+          gang_name: string
+          id: string
+          in_game_name: string
+          review_note: string | null
+          reviewed_at: string | null
+          reviewed_by: string | null
+          status: Database["public"]["Enums"]["withdrawal_status"]
+          ticket_tracking_id: string | null
+          user_id: string
+        }
+        Insert: {
+          amount: number
+          created_at?: string
+          gang_name: string
+          id?: string
+          in_game_name: string
+          review_note?: string | null
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          status?: Database["public"]["Enums"]["withdrawal_status"]
+          ticket_tracking_id?: string | null
+          user_id: string
+        }
+        Update: {
+          amount?: number
+          created_at?: string
+          gang_name?: string
+          id?: string
+          in_game_name?: string
+          review_note?: string | null
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          status?: Database["public"]["Enums"]["withdrawal_status"]
+          ticket_tracking_id?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
@@ -930,6 +990,7 @@ export type Database = {
       match_status: "scheduled" | "live" | "ended" | "cancelled"
       ticket_status: "open" | "pending" | "resolved" | "closed"
       token_request_status: "pending" | "approved" | "denied"
+      withdrawal_status: "pending" | "approved" | "declined"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -1071,6 +1132,7 @@ export const Constants = {
       match_status: ["scheduled", "live", "ended", "cancelled"],
       ticket_status: ["open", "pending", "resolved", "closed"],
       token_request_status: ["pending", "approved", "denied"],
+      withdrawal_status: ["pending", "approved", "declined"],
     },
   },
 } as const
