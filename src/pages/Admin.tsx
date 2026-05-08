@@ -908,6 +908,73 @@ const LeaderboardTab = () => {
   );
 };
 
+const WithdrawalsTab = () => {
+  const { user: me } = useAuth();
+  const confirm = useConfirm();
+  const [items, setItems] = useState<any[]>([]);
+  const load = () => supabase.from("withdrawal_requests").select("*,profile:profiles(full_name,email,token_balance)").order("created_at", { ascending: false }).then(({ data }) => setItems(data ?? []));
+  useEffect(() => {
+    load();
+    const ch = supabase.channel("admin-withdrawals").on("postgres_changes", { event: "*", schema: "public", table: "withdrawal_requests" }, load).subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, []);
+  const decide = async (r: any, approve: boolean) => {
+    const res = await confirm({
+      title: approve ? "Approve withdrawal" : "Decline withdrawal",
+      description: `${r.amount.toLocaleString()} tokens · ${r.in_game_name} (${r.gang_name})`,
+      destructive: !approve, reasonRequired: true,
+      confirmLabel: approve ? "Approve" : "Decline",
+    });
+    if (!res.confirmed) return;
+    const note = res.reason ?? "";
+    await supabase.from("withdrawal_requests").update({
+      status: approve ? "approved" : "declined",
+      reviewed_by: me?.id, reviewed_at: new Date().toISOString(), review_note: note,
+    }).eq("id", r.id);
+    if (!approve) {
+      // refund
+      await supabase.from("profiles").update({ token_balance: (r.profile?.token_balance ?? 0) + Number(r.amount) }).eq("id", r.user_id);
+    }
+    await supabase.from("notifications").insert({
+      user_id: r.user_id,
+      title: approve ? "Withdrawal approved ✅" : "Withdrawal declined",
+      body: approve
+        ? `Your withdrawal of ${Number(r.amount).toLocaleString()} tokens is approved. ${note}`
+        : `Your withdrawal was declined and refunded. Reason: ${note}`,
+      link: "/dashboard",
+    });
+    await supabase.from("audit_logs").insert({
+      actor_id: me?.id, action: approve ? "withdrawal_approve" : "withdrawal_decline",
+      target_type: "user", target_id: r.user_id, metadata: { amount: r.amount, ign: r.in_game_name, gang: r.gang_name, note },
+    });
+    load();
+  };
+  return (
+    <div className="space-y-2">
+      {items.length === 0 && <p className="text-sm text-muted-foreground">No withdrawal requests.</p>}
+      {items.map((r) => (
+        <Card key={r.id} className="glass p-3">
+          <div className="flex justify-between flex-wrap gap-2">
+            <div className="min-w-0">
+              <div className="font-bold">{r.in_game_name} · <span className="text-gold">{Number(r.amount).toLocaleString()}</span></div>
+              <div className="text-xs text-muted-foreground">Gang: {r.gang_name} · {r.profile?.full_name} ({r.profile?.email})</div>
+              <div className="text-xs text-muted-foreground">{new Date(r.created_at).toLocaleString()} {r.ticket_tracking_id && <>· Ticket {r.ticket_tracking_id}</>}</div>
+              {r.review_note && <div className="text-xs mt-1 italic">"{r.review_note}"</div>}
+            </div>
+            <div className="flex flex-col gap-1 items-end">
+              <Badge variant={r.status === "approved" ? "default" : r.status === "declined" ? "destructive" : "outline"}>{r.status}</Badge>
+              {r.status === "pending" && <>
+                <Button size="sm" onClick={() => decide(r, true)} className="btn-luxury">Approve</Button>
+                <Button size="sm" variant="destructive" onClick={() => decide(r, false)}>Decline</Button>
+              </>}
+            </div>
+          </div>
+        </Card>
+      ))}
+    </div>
+  );
+};
+
 const AdminInner = () => {
   const { isAdmin, loading } = useAuth();
   if (loading) return <Layout><div className="container py-12">Loading...</div></Layout>;
