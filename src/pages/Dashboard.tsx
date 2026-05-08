@@ -5,7 +5,7 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Coins, Ticket, Gift, Copy, Upload, History } from "lucide-react";
+import { Coins, Ticket, Gift, Copy, Upload, History, Banknote } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
@@ -21,6 +21,12 @@ const Dashboard = () => {
   const [reqAmount, setReqAmount] = useState("");
   const [reqNote, setReqNote] = useState("");
   const [reqFile, setReqFile] = useState<File | null>(null);
+  const [wAmount, setWAmount] = useState("");
+  const [wIgn, setWIgn] = useState("");
+  const [wGang, setWGang] = useState("");
+  const [wTicket, setWTicket] = useState("");
+  const [withdrawals, setWithdrawals] = useState<any[]>([]);
+  const [showSuccess, setShowSuccess] = useState(false);
 
   useEffect(() => {
     if (!user) return;
@@ -29,9 +35,12 @@ const Dashboard = () => {
     const loadTxs = () => supabase.from("token_transactions").select("*").eq("user_id", user.id).order("created_at", { ascending: false }).limit(50)
       .then(({ data }) => setTxs(data ?? []));
     loadBets(); loadTxs();
+    const loadW = () => supabase.from("withdrawal_requests").select("*").eq("user_id", user.id).order("created_at", { ascending: false }).limit(20).then(({ data }) => setWithdrawals(data ?? []));
+    loadW();
     const ch = supabase.channel(`dash-${user.id}`)
       .on("postgres_changes", { event: "*", schema: "public", table: "bets", filter: `user_id=eq.${user.id}` }, loadBets)
       .on("postgres_changes", { event: "*", schema: "public", table: "token_transactions", filter: `user_id=eq.${user.id}` }, loadTxs)
+      .on("postgres_changes", { event: "*", schema: "public", table: "withdrawal_requests", filter: `user_id=eq.${user.id}` }, loadW)
       .subscribe();
     return () => { supabase.removeChannel(ch); };
   }, [user]);
@@ -110,6 +119,25 @@ const Dashboard = () => {
     setReqAmount(""); setReqNote(""); setReqFile(null);
   };
 
+  const submitWithdrawal = async () => {
+    if (!user || !profile) return;
+    const amt = parseInt(wAmount || "0", 10);
+    if (!wIgn.trim()) return toast.error("In-game name required");
+    if (!wGang.trim()) return toast.error("Gang name required");
+    if (!amt || amt <= 0) return toast.error("Enter amount");
+    if (amt > profile.token_balance) return toast.error("Amount exceeds balance");
+    const { error } = await supabase.from("withdrawal_requests").insert({
+      user_id: user.id, in_game_name: wIgn, gang_name: wGang, amount: amt,
+      ticket_tracking_id: wTicket || null,
+    });
+    if (error) return toast.error(error.message);
+    // immediately deduct
+    await supabase.from("profiles").update({ token_balance: profile.token_balance - amt }).eq("id", user.id);
+    await refresh();
+    setWAmount(""); setWIgn(""); setWGang(""); setWTicket("");
+    setShowSuccess(true);
+  };
+
   return (
     <Layout>
       <div className="container py-8 space-y-6">
@@ -171,6 +199,43 @@ const Dashboard = () => {
           </div>
           <p className="text-[11px] text-muted-foreground mt-2">Admins will review your request and credit your account if approved.</p>
         </Card>
+
+        <Card className="glass-gold p-5">
+          <h3 className="font-bold mb-3 flex items-center gap-2 gradient-gold-text"><Banknote className="h-4 w-4" />Withdraw Tokens</h3>
+          <div className="grid md:grid-cols-2 gap-2">
+            <Input placeholder="In-game Name *" value={wIgn} onChange={(e) => setWIgn(e.target.value)} />
+            <Input placeholder="In-game Gang Name *" value={wGang} onChange={(e) => setWGang(e.target.value)} />
+            <Input placeholder={`Withdrawal Amount (max ${profile.token_balance.toLocaleString()})`} type="number" value={wAmount} onChange={(e) => setWAmount(e.target.value)} />
+            <Input placeholder="Bet Ticket / Tracking ID (optional)" value={wTicket} onChange={(e) => setWTicket(e.target.value)} />
+          </div>
+          <Button onClick={submitWithdrawal} className="btn-luxury mt-3 w-full md:w-auto">Submit Withdrawal Request</Button>
+          {withdrawals.length > 0 && (
+            <div className="mt-4 space-y-1">
+              <div className="text-xs text-muted-foreground uppercase">Your withdrawal requests</div>
+              {withdrawals.map((w) => (
+                <div key={w.id} className="flex justify-between items-center text-xs glass p-2 rounded">
+                  <span>{new Date(w.created_at).toLocaleString()} · {w.in_game_name} · {Number(w.amount).toLocaleString()}</span>
+                  <Badge variant={w.status === "approved" ? "default" : w.status === "declined" ? "destructive" : "outline"}>{w.status}</Badge>
+                </div>
+              ))}
+            </div>
+          )}
+        </Card>
+
+        {showSuccess && (
+          <div onClick={() => setShowSuccess(false)} className="fixed inset-0 z-[80] bg-black/70 backdrop-blur flex items-center justify-center p-4">
+            <div onClick={(e) => e.stopPropagation()} className="glass-gold max-w-md w-full p-6 rounded-2xl text-center space-y-3">
+              <Banknote className="h-12 w-12 mx-auto text-gold" />
+              <h3 className="text-xl font-black gradient-gold-text">Request submitted</h3>
+              <p className="text-sm text-muted-foreground">
+                Your withdrawal request has been sent and you'll receive it on or before 24hrs after the admin approves it.
+                Approval withdrawal request is carefully tracked by our support team to avoid inconvenience.
+                Stay tuned for notifications from the admin on how to cash out your withdrawal after it's been approved.
+              </p>
+              <Button onClick={() => setShowSuccess(false)} className="btn-luxury w-full">OK</Button>
+            </div>
+          </div>
+        )}
 
         <Card className="glass p-5">
           <h3 className="font-bold mb-4 flex items-center gap-2"><Ticket className="h-4 w-4 text-primary" />My Bets</h3>
