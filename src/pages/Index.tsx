@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { Crosshair, Skull, Trophy, Flame, Megaphone, ChevronRight, Lock, CalendarClock, Sparkles, Mail, Phone, MessageCircle } from "lucide-react";
+import { Crosshair, Skull, Trophy, Flame, Megaphone, ChevronRight, CalendarClock, Sparkles, Mail, Phone, MessageCircle } from "lucide-react";
 import { Layout } from "@/components/Layout";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -8,16 +8,8 @@ import { Countdown } from "@/components/Countdown";
 import { supabase } from "@/integrations/supabase/client";
 import { useBetSlip } from "@/contexts/BetSlipContext";
 import { BetSlipPanel } from "@/components/BetSlipPanel";
+import { MatchCardLive, type MatchRow } from "@/components/MatchCardLive";
 
-interface OddRow { id: string; label: string; value: number; is_winner: boolean | null }
-interface MarketRow { id: string; name: string; is_open: boolean; odds: OddRow[] }
-interface MatchRow {
-  id: string; name: string; start_time: string; status: string;
-  home_score: number; away_score: number; location: string | null;
-  home_team: { name: string; logo_url: string | null } | null;
-  away_team: { name: string; logo_url: string | null } | null;
-  markets: MarketRow[];
-}
 interface Announcement { id: string; title: string; body: string | null; image_url: string | null; }
 interface EventRow { id: string; title: string; description: string | null; image_url: string | null; starts_at: string; }
 interface HighlightRow { id: string; title: string; media_url: string; media_type: string; }
@@ -33,10 +25,10 @@ const Index = () => {
   const [settings, setSettings] = useState<Settings | null>(null);
   const [showTerms, setShowTerms] = useState(false);
   const [showPopup, setShowPopup] = useState(false);
-  const { add, remove, selections } = useBetSlip();
+  const { selections } = useBetSlip();
 
   useEffect(() => {
-    const sel = "id,name,start_time,status,home_score,away_score,location,home_team:teams!matches_home_team_id_fkey(name,logo_url),away_team:teams!matches_away_team_id_fkey(name,logo_url),markets(id,name,is_open,odds(id,label,value,is_winner))";
+    const sel = "id,name,start_time,status,home_score,away_score,location,is_featured,home_team:teams!matches_home_team_id_fkey(name,logo_url),away_team:teams!matches_away_team_id_fkey(name,logo_url),markets(id,name,is_open,odds(id,label,value,is_winner))";
     const load = async () => {
       const [u, l, a, ev, hi, st] = await Promise.all([
         supabase.from("matches").select(sel).eq("status", "scheduled").order("start_time").limit(20),
@@ -76,64 +68,7 @@ const Index = () => {
     return () => clearInterval(id);
   }, [announcements.length]);
 
-  const renderMatchRow = (m: MatchRow) => {
-    const winnerMarket = m.markets?.find((mk) => /winner|1x2|match/i.test(mk.name)) ?? m.markets?.[0];
-    const odds = winnerMarket?.odds ?? [];
-    const locked = m.status === "live" || m.status === "ended" || !winnerMarket?.is_open;
-    return (
-      <Card key={m.id} className="glass p-3 md:p-4 hover:border-primary/50 transition-all">
-        <Link to={`/matches/${m.id}`} className="block">
-          <div className="text-[10px] uppercase tracking-widest text-muted-foreground truncate">{m.name}</div>
-          <div className="flex items-center gap-2 mt-1">
-            {m.home_team?.logo_url ? <img src={m.home_team.logo_url} className="h-7 w-7 rounded-full object-cover" alt="" /> : <Crosshair className="h-4 w-4 text-primary" />}
-            <div className="font-bold text-sm truncate flex-1">{m.home_team?.name} <span className="text-muted-foreground">vs</span> {m.away_team?.name}</div>
-            {m.away_team?.logo_url && <img src={m.away_team.logo_url} className="h-7 w-7 rounded-full object-cover" alt="" />}
-          </div>
-          <div className="text-[10px] text-muted-foreground mt-1">
-            {m.status === "scheduled" ? <Countdown target={m.start_time} /> :
-             m.status === "live" ? <span className="text-destructive font-bold">LIVE {m.home_score}-{m.away_score}</span> :
-             `Final ${m.home_score}-${m.away_score}`}
-            {m.markets?.length ? ` · ${m.markets.length} markets` : ""}
-          </div>
-        </Link>
-        {odds.length > 0 && (
-          <div className="grid grid-cols-3 gap-1 mt-3">
-            {odds.slice(0, 3).map((o) => {
-              const selected = selections.some((s) => s.odd_id === o.id);
-              return (
-                <button
-                  key={o.id}
-                  disabled={locked}
-                  onClick={(e) => {
-                    e.preventDefault();
-                    if (selected) remove(o.id);
-                    else add({
-                      match_id: m.id,
-                      match_name: `${m.home_team?.name} vs ${m.away_team?.name}`,
-                      market_id: winnerMarket!.id,
-                      market_name: winnerMarket!.name,
-                      odd_id: o.id,
-                      selection_label: o.label,
-                      odds: Number(o.value),
-                    });
-                  }}
-                  className={`px-2 py-2 rounded text-xs font-bold transition-all ${
-                    locked ? "bg-secondary/30 text-muted-foreground cursor-not-allowed" :
-                    selected ? "bg-emerald-500/30 border border-emerald-400 text-emerald-200" :
-                    "bg-emerald-600/80 hover:bg-emerald-500 text-white"
-                  }`}
-                >
-                  <div className="text-[9px] opacity-80 truncate">{o.label}</div>
-                  <div className="text-sm">{Number(o.value).toFixed(2)}</div>
-                </button>
-              );
-            })}
-          </div>
-        )}
-        {locked && <div className="flex items-center gap-1 text-[10px] text-muted-foreground mt-2"><Lock className="h-3 w-3" />Bookings locked</div>}
-      </Card>
-    );
-  };
+  const renderMatchRow = (m: MatchRow) => <MatchCardLive key={m.id} match={m} />;
 
   return (
     <Layout>
