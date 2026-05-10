@@ -29,6 +29,7 @@ const UserManagement = () => {
   const [detailBets, setDetailBets] = useState<any[]>([]);
   const [detailTx, setDetailTx] = useState<any[]>([]);
   const [detailLogs, setDetailLogs] = useState<any[]>([]);
+  const [detailExtra, setDetailExtra] = useState<{withdrawals:any[],tokenReqs:any[],tickets:any[],notifications:any[],roles:string[]}>({withdrawals:[],tokenReqs:[],tickets:[],notifications:[],roles:[]});
 
   const load = async () => {
     const { data: ps } = await supabase.from("profiles").select("*").order("created_at", { ascending: false }).limit(200);
@@ -44,12 +45,18 @@ const UserManagement = () => {
 
   const openDetail = async (u: any) => {
     setDetail(u);
-    const [b, t, l] = await Promise.all([
+    const [b, t, l, w, tr, tk, n, r] = await Promise.all([
       supabase.from("bets").select("*").eq("user_id", u.id).order("created_at", { ascending: false }).limit(50),
       supabase.from("token_transactions").select("*").eq("user_id", u.id).order("created_at", { ascending: false }).limit(50),
       supabase.from("audit_logs").select("*").eq("target_id", u.id).order("created_at", { ascending: false }).limit(50),
+      supabase.from("withdrawal_requests").select("*").eq("user_id", u.id).order("created_at", { ascending: false }).limit(20),
+      supabase.from("token_requests").select("*").eq("user_id", u.id).order("created_at", { ascending: false }).limit(20),
+      supabase.from("support_tickets").select("*").eq("user_id", u.id).order("created_at", { ascending: false }).limit(20),
+      supabase.from("notifications").select("*").eq("user_id", u.id).order("created_at", { ascending: false }).limit(20),
+      supabase.from("user_roles").select("role").eq("user_id", u.id),
     ]);
     setDetailBets(b.data ?? []); setDetailTx(t.data ?? []); setDetailLogs(l.data ?? []);
+    setDetailExtra({ withdrawals: w.data ?? [], tokenReqs: tr.data ?? [], tickets: tk.data ?? [], notifications: n.data ?? [], roles: (r.data ?? []).map((x:any)=>x.role) });
   };
 
   const toggleRole = async (uid: string, role: AppRole) => {
@@ -76,6 +83,14 @@ const UserManagement = () => {
     await supabase.from("audit_logs").insert({ actor_id: me?.id, action: `${field}_${value}`, target_type: "user", target_id: uid, metadata: { reason } });
     await supabase.from("notifications").insert({ user_id: uid, title: `Account ${field}`, body: reason || `Status updated` });
     await load();
+  };
+
+  const sendUserNotif = async (uid: string) => {
+    const r = await confirm({ title: "Send notification", inputLabel: "Title", inputType: "text", inputPlaceholder: "Title...", reasonRequired: true, confirmLabel: "Send" });
+    if (!r.confirmed || !r.value) return;
+    await supabase.from("notifications").insert({ user_id: uid, title: r.value, body: r.reason ?? null });
+    await supabase.from("audit_logs").insert({ actor_id: me?.id, action: "notification_send", target_type: "user", target_id: uid, metadata: { title: r.value } });
+    toast.success("Sent");
   };
 
   const giveTokens = async (uid: string, current: number) => {
@@ -158,21 +173,64 @@ const UserManagement = () => {
       {detail && (
         <div onClick={() => setDetail(null)} className="fixed inset-0 z-[80] bg-black/70 backdrop-blur flex items-center justify-center p-4">
           <div onClick={(e) => e.stopPropagation()} className="glass-gold max-w-2xl w-full max-h-[85vh] overflow-y-auto p-6 rounded-2xl space-y-3">
-            <h3 className="text-2xl font-black gradient-gold-text">{detail.full_name}</h3>
+            <div className="flex items-center gap-3">
+              {detail.avatar_url ? <img src={detail.avatar_url} className="h-14 w-14 rounded-full object-cover" alt="" /> : <div className="h-14 w-14 rounded-full bg-secondary grid place-items-center font-bold">{(detail.full_name ?? "?").slice(0,2).toUpperCase()}</div>}
+              <div className="min-w-0 flex-1">
+                <h3 className="text-2xl font-black gradient-gold-text">{detail.full_name}</h3>
+                <div className="flex flex-wrap gap-1 mt-1">
+                  {detailExtra.roles.map((r) => <Badge key={r} variant="outline" className={ROLE_COLORS[r as AppRole]}>{ROLE_LABELS[r as AppRole]}</Badge>)}
+                  {detail.is_banned && <Badge variant="destructive">BANNED</Badge>}
+                  {detail.is_muted && <Badge variant="destructive">MUTED</Badge>}
+                  {detail.is_restricted && <Badge variant="destructive">RESTRICTED</Badge>}
+                </div>
+              </div>
+            </div>
             <div className="text-xs text-muted-foreground">{detail.email} · {detail.country ?? ""} · {detail.discord_username ?? ""} · {detail.phone ?? ""}</div>
             <div className="text-xs">Server: {detail.server} · Gang: {detail.gang_name ?? "—"} ({detail.gang_type ?? "—"})</div>
-            <div className="text-sm text-gold">Tokens: {detail.token_balance.toLocaleString()}</div>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-center">
+              <div className="glass p-2 rounded"><div className="text-[10px] text-muted-foreground">Tokens</div><div className="text-sm text-gold font-bold">{Number(detail.token_balance).toLocaleString()}</div></div>
+              <div className="glass p-2 rounded"><div className="text-[10px] text-muted-foreground">Bets</div><div className="text-sm font-bold">{detailBets.length}</div></div>
+              <div className="glass p-2 rounded"><div className="text-[10px] text-muted-foreground">Withdrawals</div><div className="text-sm font-bold">{detailExtra.withdrawals.length}</div></div>
+              <div className="glass p-2 rounded"><div className="text-[10px] text-muted-foreground">Tickets</div><div className="text-sm font-bold">{detailExtra.tickets.length}</div></div>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button size="sm" variant="outline" onClick={() => giveTokens(detail.id, detail.token_balance)}>± Tokens</Button>
+              <Button size="sm" variant="outline" onClick={() => sendUserNotif(detail.id)}><Send className="h-3 w-3 mr-1" />Notify</Button>
+              <Button size="sm" variant={detail.is_banned?"destructive":"outline"} onClick={() => setFlag(detail.id, "is_banned", !detail.is_banned, "ban_reason")}>{detail.is_banned ? "Unban" : "Ban"}</Button>
+              <Button size="sm" variant={detail.is_muted?"destructive":"outline"} onClick={() => setFlag(detail.id, "is_muted", !detail.is_muted, "mute_reason")}>{detail.is_muted ? "Unmute" : "Mute"}</Button>
+              <Button size="sm" variant={detail.is_restricted?"destructive":"outline"} onClick={() => setFlag(detail.id, "is_restricted", !detail.is_restricted, "restrict_reason")}>{detail.is_restricted ? "Unrestrict" : "Restrict"}</Button>
+            </div>
+            {(detail.ban_reason || detail.mute_reason || detail.restrict_reason) && (
+              <div className="glass p-2 rounded text-xs space-y-1">
+                {detail.ban_reason && <div><b className="text-red-400">Ban reason:</b> {detail.ban_reason}</div>}
+                {detail.mute_reason && <div><b className="text-red-400">Mute reason:</b> {detail.mute_reason}</div>}
+                {detail.restrict_reason && <div><b className="text-red-400">Restrict reason:</b> {detail.restrict_reason}</div>}
+              </div>
+            )}
             <div>
               <h4 className="font-bold text-sm mt-3">Bets ({detailBets.length})</h4>
-              {detailBets.map((b) => <div key={b.id} className="text-xs flex justify-between"><span className="font-mono">{b.tracking_id}</span><span>{b.status} · stake {b.stake} · payout {b.potential_payout}</span></div>)}
+              {detailBets.length === 0 ? <div className="text-xs text-muted-foreground">None</div> :
+                detailBets.slice(0,10).map((b) => <div key={b.id} className="text-xs flex justify-between"><span className="font-mono">{b.tracking_id}</span><span><Badge variant={b.status==='won'?'default':b.status==='lost'?'destructive':'outline'} className="mr-1">{b.status}</Badge>stake {Number(b.stake).toLocaleString()} · payout {Number(b.potential_payout).toLocaleString()}</span></div>)}
+            </div>
+            <div>
+              <h4 className="font-bold text-sm mt-3">Token Requests ({detailExtra.tokenReqs.length})</h4>
+              {detailExtra.tokenReqs.length === 0 ? <div className="text-xs text-muted-foreground">None</div> :
+                detailExtra.tokenReqs.map((r) => <div key={r.id} className="text-xs flex justify-between"><span>{new Date(r.created_at).toLocaleDateString()} · +{Number(r.amount).toLocaleString()}</span><Badge variant={r.status==='approved'?'default':r.status==='denied'?'destructive':'outline'}>{r.status}</Badge></div>)}
+            </div>
+            <div>
+              <h4 className="font-bold text-sm mt-3">Withdrawals ({detailExtra.withdrawals.length})</h4>
+              {detailExtra.withdrawals.length === 0 ? <div className="text-xs text-muted-foreground">None</div> :
+                detailExtra.withdrawals.map((w) => <div key={w.id} className="text-xs flex justify-between"><span>{new Date(w.created_at).toLocaleDateString()} · {Number(w.amount).toLocaleString()} → {w.in_game_name}</span><Badge variant={w.status==='approved'?'default':w.status==='declined'?'destructive':'outline'}>{w.status}</Badge></div>)}
             </div>
             <div>
               <h4 className="font-bold text-sm mt-3">Transactions ({detailTx.length})</h4>
-              {detailTx.map((t) => <div key={t.id} className="text-xs flex justify-between"><span>{new Date(t.created_at).toLocaleString()} · {t.description ?? t.kind}</span><span className={Number(t.amount)>0?"text-emerald-400":"text-red-400"}>{Number(t.amount)>0?"+":""}{t.amount}</span></div>)}
+              {detailTx.length === 0 ? <div className="text-xs text-muted-foreground">None</div> :
+                detailTx.slice(0,15).map((t) => <div key={t.id} className="text-xs flex justify-between"><span>{new Date(t.created_at).toLocaleString()} · {t.description ?? t.kind}</span><span className={Number(t.amount)>0?"text-emerald-400":"text-red-400"}>{Number(t.amount)>0?"+":""}{Number(t.amount).toLocaleString()}</span></div>)}
             </div>
             <div>
               <h4 className="font-bold text-sm mt-3">Audit ({detailLogs.length})</h4>
-              {detailLogs.map((l) => <div key={l.id} className="text-xs"><b className="text-gold">{l.action}</b> · {new Date(l.created_at).toLocaleString()}</div>)}
+              {detailLogs.length === 0 ? <div className="text-xs text-muted-foreground">None</div> :
+                detailLogs.slice(0,15).map((l) => <div key={l.id} className="text-xs"><b className="text-gold">{l.action.replace(/_/g," ")}</b> · {new Date(l.created_at).toLocaleString()}</div>)}
             </div>
             <Button onClick={() => setDetail(null)} className="btn-luxury w-full">Close</Button>
           </div>
