@@ -755,8 +755,25 @@ const Logs = () => {
     withdrawal_decline: "Withdrawal declined",
     notification_send: "Notification broadcast",
     emergency_wipe_all_tokens: "Emergency: all tokens wiped",
+    match_create: "Match created",
+    match_end: "Match ended & settled",
+    match_delete: "Match deleted",
+    promo_create: "Promo created",
+    promo_redeem: "Promo redeemed",
+    bet_place: "Bet placed",
+    bet_cashout: "Bet cashed out",
   };
-  const human = (a: string) => ACTION_LABELS[a] ?? a.replace(/_/g, " ");
+  const ACTION_COLOR: Record<string, string> = {
+    role_assign: "text-blue-400", role_remove: "text-amber-400",
+    is_banned_true: "text-red-400", is_muted_true: "text-red-400", is_restricted_true: "text-red-400",
+    is_banned_false: "text-emerald-400", is_muted_false: "text-emerald-400", is_restricted_false: "text-emerald-400",
+    tokens_request_approve: "text-emerald-400", tokens_request_deny: "text-red-400",
+    withdrawal_approve: "text-emerald-400", withdrawal_decline: "text-red-400",
+    emergency_wipe_all_tokens: "text-red-500",
+    match_create: "text-blue-400", match_end: "text-emerald-400", match_delete: "text-red-400",
+  };
+  const human = (a: string) => ACTION_LABELS[a] ?? a.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+  const colorOf = (a: string) => ACTION_COLOR[a] ?? "text-gold";
   const fmtMeta = (m: any) => {
     if (!m || typeof m !== "object") return null;
     return Object.entries(m).filter(([,v])=>v!==null && v!=="" ).map(([k,v]) => (
@@ -778,7 +795,7 @@ const Logs = () => {
             {filtered.map((l) => (
               <tr key={l.id} className="border-b border-border/40 hover:bg-secondary/30">
                 <td className="p-2 whitespace-nowrap text-muted-foreground">{new Date(l.created_at).toLocaleString()}</td>
-                <td className="p-2 font-bold text-gold">{human(l.action)}</td>
+                <td className={`p-2 font-bold ${colorOf(l.action)}`}>{human(l.action)}</td>
                 <td className="p-2">{profiles[l.actor_id] ?? "system"}</td>
                 <td className="p-2">{l.target_id ? `${l.target_type ?? ""} · ${profiles[l.target_id] ?? l.target_id?.slice(0,8)}` : "—"}</td>
                 <td className="p-2 text-muted-foreground">{fmtMeta(l.metadata)}</td>
