@@ -319,6 +319,7 @@ const MatchBuilder = () => {
     if (!r.confirmed) return;
     const winner = m.home_score > m.away_score ? m.home_team_id : m.away_score > m.home_score ? m.away_team_id : null;
     await supabase.from("matches").update({ status: "ended", winner_team_id: winner }).eq("id", m.id);
+    await supabase.from("audit_logs").insert({ action: "match_end", target_type: "match", target_id: m.id, metadata: { score: `${m.home_score}-${m.away_score}`, winner } });
     // Settle bets touching this match
     const { data: sels } = await supabase.from("bet_selections").select("bet_id, market_id, odd_id").eq("match_id", m.id);
     const betIds = [...new Set((sels ?? []).map((s: any) => s.bet_id))];
