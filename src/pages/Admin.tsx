@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Shield, Users, Crosshair, Megaphone, Gift, Settings, FileText, Coins, Calculator, Trash2, Lock, AlertTriangle, CalendarClock, Sparkles, ListChecks, Send, LifeBuoy, Trophy, Bot, Banknote } from "lucide-react";
+import { Shield, Users, Crosshair, Megaphone, Gift, Settings, FileText, Coins, Calculator, Trash2, Lock, AlertTriangle, CalendarClock, Sparkles, ListChecks, Send, LifeBuoy, Trophy, Bot, Banknote, Star, ChevronDown, ChevronRight } from "lucide-react";
 import { useAuth, AppRole, ROLE_COLORS, ROLE_LABELS } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
@@ -460,7 +460,17 @@ const TokenRequests = () => {
   const { user: me } = useAuth();
   const confirm = useConfirm();
   const [items, setItems] = useState<any[]>([]);
-  const load = () => supabase.from("token_requests").select("*,profile:profiles(full_name,email,token_balance)").order("created_at", { ascending: false }).then(({ data }) => setItems(data ?? []));
+  const [filter, setFilter] = useState<"pending" | "all" | "approved" | "denied">("pending");
+  const load = async () => {
+    const { data: rs } = await supabase.from("token_requests").select("*").order("created_at", { ascending: false });
+    const ids = [...new Set((rs ?? []).map((r: any) => r.user_id))];
+    const { data: ps } = ids.length
+      ? await supabase.from("profiles").select("id,full_name,email,token_balance,avatar_url").in("id", ids)
+      : { data: [] as any[] };
+    const map: Record<string, any> = {};
+    (ps ?? []).forEach((p: any) => { map[p.id] = p; });
+    setItems((rs ?? []).map((r: any) => ({ ...r, profile: map[r.user_id] ?? null })));
+  };
   useEffect(() => {
     load();
     const ch = supabase.channel("admin-tr").on("postgres_changes", { event: "*", schema: "public", table: "token_requests" }, load).subscribe();
@@ -483,20 +493,34 @@ const TokenRequests = () => {
     await supabase.from("audit_logs").insert({ actor_id: me?.id, action: approve ? "tokens_request_approve" : "tokens_request_deny", target_type: "user", target_id: r.user_id, metadata: { amount: r.amount, note } });
     load();
   };
+  const visible = items.filter((r) => filter === "all" || r.status === filter);
+  const counts = { pending: items.filter(i=>i.status==='pending').length, approved: items.filter(i=>i.status==='approved').length, denied: items.filter(i=>i.status==='denied').length };
   return (
     <div className="space-y-2">
-      {items.length === 0 && <p className="text-sm text-muted-foreground">No requests.</p>}
-      {items.map((r) => (
+      <div className="flex flex-wrap gap-2">
+        {(["pending","approved","denied","all"] as const).map((k) => (
+          <Button key={k} size="sm" variant={filter===k?"default":"outline"} onClick={()=>setFilter(k)}>
+            {k} {k!=="all" && <Badge variant="secondary" className="ml-2">{(counts as any)[k]}</Badge>}
+          </Button>
+        ))}
+      </div>
+      {visible.length === 0 && <p className="text-sm text-muted-foreground">No {filter} requests.</p>}
+      {visible.map((r) => (
         <Card key={r.id} className="glass p-3">
           <div className="flex justify-between flex-wrap gap-2">
-            <div>
-              <div className="font-bold">{r.profile?.full_name} · <span className="text-gold">+{r.amount}</span></div>
-              <div className="text-xs text-muted-foreground">{r.profile?.email} · {new Date(r.created_at).toLocaleString()}</div>
+            <div className="flex items-start gap-3 min-w-0">
+              {r.profile?.avatar_url ? <img src={r.profile.avatar_url} className="h-10 w-10 rounded-full object-cover" alt="" /> : <div className="h-10 w-10 rounded-full bg-secondary grid place-items-center text-xs">{(r.profile?.full_name ?? "?").slice(0,2).toUpperCase()}</div>}
+              <div className="min-w-0">
+                <div className="font-bold">{r.profile?.full_name ?? "Unknown user"} · <span className="text-gold">+{Number(r.amount).toLocaleString()}</span></div>
+                <div className="text-xs text-muted-foreground">{r.profile?.email} · current balance {Number(r.profile?.token_balance ?? 0).toLocaleString()}</div>
+                <div className="text-xs text-muted-foreground">{new Date(r.created_at).toLocaleString()}</div>
               {r.note && <div className="text-xs mt-1">{r.note}</div>}
+              {r.review_note && <div className="text-xs mt-1 italic">Review: "{r.review_note}"</div>}
               {r.proof_image_url && <a href={r.proof_image_url} target="_blank" rel="noreferrer"><img src={r.proof_image_url} className="mt-2 max-w-[140px] rounded" alt="" /></a>}
+              </div>
             </div>
             <div className="flex flex-col gap-1">
-              <Badge variant="outline">{r.status}</Badge>
+              <Badge variant={r.status==="approved"?"default":r.status==="denied"?"destructive":"outline"}>{r.status}</Badge>
               {r.status === "pending" && <>
                 <Button size="sm" onClick={() => decide(r, true)} className="btn-luxury">Approve</Button>
                 <Button size="sm" variant="destructive" onClick={() => decide(r, false)}>Deny</Button>
@@ -856,7 +880,13 @@ const SupportTab = () => {
   const [open, setOpen] = useState<any | null>(null);
   const [msgs, setMsgs] = useState<any[]>([]);
   const [reply, setReply] = useState("");
-  const load = () => supabase.from("support_tickets").select("*,profile:profiles(full_name,email)").order("created_at", { ascending: false }).then(({ data }) => setTickets(data ?? []));
+  const load = async () => {
+    const { data: ts } = await supabase.from("support_tickets").select("*").order("created_at", { ascending: false });
+    const ids = [...new Set((ts ?? []).map((t: any) => t.user_id))];
+    const { data: ps } = ids.length ? await supabase.from("profiles").select("id,full_name,email").in("id", ids) : { data: [] as any[] };
+    const map: Record<string, any> = {}; (ps ?? []).forEach((p: any) => { map[p.id] = p; });
+    setTickets((ts ?? []).map((t: any) => ({ ...t, profile: map[t.user_id] ?? null })));
+  };
   useEffect(() => {
     load();
     const ch = supabase.channel("admin-support").on("postgres_changes", { event: "*", schema: "public", table: "support_tickets" }, load).subscribe();
@@ -931,7 +961,14 @@ const WithdrawalsTab = () => {
   const { user: me } = useAuth();
   const confirm = useConfirm();
   const [items, setItems] = useState<any[]>([]);
-  const load = () => supabase.from("withdrawal_requests").select("*,profile:profiles(full_name,email,token_balance)").order("created_at", { ascending: false }).then(({ data }) => setItems(data ?? []));
+  const [filter, setFilter] = useState<"pending" | "all" | "approved" | "declined">("pending");
+  const load = async () => {
+    const { data: rs } = await supabase.from("withdrawal_requests").select("*").order("created_at", { ascending: false });
+    const ids = [...new Set((rs ?? []).map((r: any) => r.user_id))];
+    const { data: ps } = ids.length ? await supabase.from("profiles").select("id,full_name,email,token_balance,avatar_url").in("id", ids) : { data: [] as any[] };
+    const map: Record<string, any> = {}; (ps ?? []).forEach((p: any) => { map[p.id] = p; });
+    setItems((rs ?? []).map((r: any) => ({ ...r, profile: map[r.user_id] ?? null })));
+  };
   useEffect(() => {
     load();
     const ch = supabase.channel("admin-withdrawals").on("postgres_changes", { event: "*", schema: "public", table: "withdrawal_requests" }, load).subscribe();
@@ -968,10 +1005,19 @@ const WithdrawalsTab = () => {
     });
     load();
   };
+  const visible = items.filter((r) => filter === "all" || r.status === filter);
+  const counts = { pending: items.filter(i=>i.status==='pending').length, approved: items.filter(i=>i.status==='approved').length, declined: items.filter(i=>i.status==='declined').length };
   return (
     <div className="space-y-2">
-      {items.length === 0 && <p className="text-sm text-muted-foreground">No withdrawal requests.</p>}
-      {items.map((r) => (
+      <div className="flex flex-wrap gap-2">
+        {(["pending","approved","declined","all"] as const).map((k) => (
+          <Button key={k} size="sm" variant={filter===k?"default":"outline"} onClick={()=>setFilter(k)}>
+            {k} {k!=="all" && <Badge variant="secondary" className="ml-2">{(counts as any)[k]}</Badge>}
+          </Button>
+        ))}
+      </div>
+      {visible.length === 0 && <p className="text-sm text-muted-foreground">No {filter} withdrawal requests.</p>}
+      {visible.map((r) => (
         <Card key={r.id} className="glass p-3">
           <div className="flex justify-between flex-wrap gap-2">
             <div className="min-w-0">
