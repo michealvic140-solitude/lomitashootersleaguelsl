@@ -344,6 +344,7 @@ const MatchBuilder = () => {
     const r = await confirm({ title: "Delete match?", description: "Bet history is preserved; the match itself will be removed from listings.", destructive: true, reasonRequired: false, confirmLabel: "Delete" });
     if (!r.confirmed) return;
     await supabase.from("matches").delete().eq("id", m.id);
+    await supabase.from("audit_logs").insert({ action: "match_delete", target_type: "match", target_id: m.id, metadata: { name: m.name } });
     toast.success("Match deleted"); load();
   };
 
