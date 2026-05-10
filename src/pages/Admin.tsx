@@ -191,6 +191,8 @@ const MatchBuilder = () => {
   const [newTeam, setNewTeam] = useState("");
   const [newTeamGang, setNewTeamGang] = useState<"G" | "F" | "">("");
   const [newTeamLogo, setNewTeamLogo] = useState<File | null>(null);
+  const [featured, setFeatured] = useState(false);
+  const [autoMarket, setAutoMarket] = useState(true);
 
   const load = async () => {
     const { data: t } = await supabase.from("teams").select("*").order("created_at", { ascending: false });
@@ -223,8 +225,30 @@ const MatchBuilder = () => {
   };
   const createMatch = async () => {
     if (!name || !home || !away || !start) return toast.error("Fill all fields");
-    await supabase.from("matches").insert({ name, home_team_id: home, away_team_id: away, location: loc, start_time: new Date(start).toISOString() });
-    setName(""); setLoc(""); setStart(""); await load(); toast.success("Match created");
+    if (home === away) return toast.error("Home and away must differ");
+    const { data: match, error } = await supabase
+      .from("matches")
+      .insert({ name, home_team_id: home, away_team_id: away, location: loc, start_time: new Date(start).toISOString(), is_featured: featured })
+      .select("id")
+      .single();
+    if (error || !match) return toast.error(error?.message ?? "Failed");
+    if (autoMarket) {
+      const homeName = teams.find((t) => t.id === home)?.name ?? "Home";
+      const awayName = teams.find((t) => t.id === away)?.name ?? "Away";
+      const { data: mkt } = await supabase.from("markets").insert({ match_id: match.id, name: "Match Winner" }).select("id").single();
+      if (mkt) {
+        await supabase.from("odds").insert([
+          { market_id: mkt.id, label: homeName, value: 2.0 },
+          { market_id: mkt.id, label: "Draw", value: 3.0 },
+          { market_id: mkt.id, label: awayName, value: 2.0 },
+        ]);
+      }
+    }
+    await supabase.from("audit_logs").insert({ action: "match_create", target_type: "match", target_id: match.id, metadata: { name, home, away, featured, auto_market: autoMarket } });
+    setName(""); setLoc(""); setStart(""); setFeatured(false); await load(); toast.success("Match created");
+  };
+  const toggleFeatured = async (m: any) => {
+    await supabase.from("matches").update({ is_featured: !m.is_featured }).eq("id", m.id); load();
   };
   const updateScore = async (id: string, h: number, a: number) => {
     await supabase.from("matches").update({ home_score: h, away_score: a }).eq("id", id); await load();
@@ -307,6 +331,10 @@ const MatchBuilder = () => {
         </div>
         <Input placeholder="Location" value={loc} onChange={(e) => setLoc(e.target.value)} />
         <Input type="datetime-local" value={start} onChange={(e) => setStart(e.target.value)} />
+        <div className="flex flex-wrap gap-4 text-xs">
+          <label className="flex items-center gap-2"><input type="checkbox" checked={featured} onChange={(e)=>setFeatured(e.target.checked)} />Mark as featured</label>
+          <label className="flex items-center gap-2"><input type="checkbox" checked={autoMarket} onChange={(e)=>setAutoMarket(e.target.checked)} />Auto-create 1X2 Match Winner market</label>
+        </div>
         <Button onClick={createMatch} className="btn-luxury">Create</Button>
       </Card>
       <div className="space-y-2">
@@ -325,6 +353,7 @@ const MatchBuilder = () => {
                 {m.status !== "ended" && <Button size="sm" variant="destructive" onClick={() => endMatch(m)}>End</Button>}
                 <Button size="sm" variant="outline" onClick={() => toggleAllOdds(m.id, true)}>Enable odds</Button>
                 <Button size="sm" variant="outline" onClick={() => toggleAllOdds(m.id, false)}><Lock className="h-3 w-3 mr-1" />Disable odds</Button>
+                <Button size="sm" variant={m.is_featured?"default":"outline"} onClick={() => toggleFeatured(m)}><Star className="h-3 w-3 mr-1" />{m.is_featured?"Featured":"Feature"}</Button>
                 {m.status === "ended" && <Button size="sm" variant="destructive" onClick={() => deleteMatch(m)}><Trash2 className="h-3 w-3" /></Button>}
                 <MarketsEditor matchId={m.id} />
               </div>
