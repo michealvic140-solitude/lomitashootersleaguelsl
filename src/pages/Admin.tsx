@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Shield, Users, Crosshair, Megaphone, Gift, Settings, FileText, Coins, Calculator, Trash2, Lock, AlertTriangle, CalendarClock, Sparkles, ListChecks, Send, LifeBuoy, Trophy, Bot, Banknote } from "lucide-react";
+import { Shield, Users, Crosshair, Megaphone, Gift, Settings, FileText, Coins, Calculator, Trash2, Lock, AlertTriangle, CalendarClock, Sparkles, ListChecks, Send, LifeBuoy, Trophy, Bot, Banknote, Star, ChevronDown, ChevronRight } from "lucide-react";
 import { useAuth, AppRole, ROLE_COLORS, ROLE_LABELS } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
@@ -29,6 +29,7 @@ const UserManagement = () => {
   const [detailBets, setDetailBets] = useState<any[]>([]);
   const [detailTx, setDetailTx] = useState<any[]>([]);
   const [detailLogs, setDetailLogs] = useState<any[]>([]);
+  const [detailExtra, setDetailExtra] = useState<{withdrawals:any[],tokenReqs:any[],tickets:any[],notifications:any[],roles:string[]}>({withdrawals:[],tokenReqs:[],tickets:[],notifications:[],roles:[]});
 
   const load = async () => {
     const { data: ps } = await supabase.from("profiles").select("*").order("created_at", { ascending: false }).limit(200);
@@ -44,12 +45,18 @@ const UserManagement = () => {
 
   const openDetail = async (u: any) => {
     setDetail(u);
-    const [b, t, l] = await Promise.all([
+    const [b, t, l, w, tr, tk, n, r] = await Promise.all([
       supabase.from("bets").select("*").eq("user_id", u.id).order("created_at", { ascending: false }).limit(50),
       supabase.from("token_transactions").select("*").eq("user_id", u.id).order("created_at", { ascending: false }).limit(50),
       supabase.from("audit_logs").select("*").eq("target_id", u.id).order("created_at", { ascending: false }).limit(50),
+      supabase.from("withdrawal_requests").select("*").eq("user_id", u.id).order("created_at", { ascending: false }).limit(20),
+      supabase.from("token_requests").select("*").eq("user_id", u.id).order("created_at", { ascending: false }).limit(20),
+      supabase.from("support_tickets").select("*").eq("user_id", u.id).order("created_at", { ascending: false }).limit(20),
+      supabase.from("notifications").select("*").eq("user_id", u.id).order("created_at", { ascending: false }).limit(20),
+      supabase.from("user_roles").select("role").eq("user_id", u.id),
     ]);
     setDetailBets(b.data ?? []); setDetailTx(t.data ?? []); setDetailLogs(l.data ?? []);
+    setDetailExtra({ withdrawals: w.data ?? [], tokenReqs: tr.data ?? [], tickets: tk.data ?? [], notifications: n.data ?? [], roles: (r.data ?? []).map((x:any)=>x.role) });
   };
 
   const toggleRole = async (uid: string, role: AppRole) => {
@@ -76,6 +83,14 @@ const UserManagement = () => {
     await supabase.from("audit_logs").insert({ actor_id: me?.id, action: `${field}_${value}`, target_type: "user", target_id: uid, metadata: { reason } });
     await supabase.from("notifications").insert({ user_id: uid, title: `Account ${field}`, body: reason || `Status updated` });
     await load();
+  };
+
+  const sendUserNotif = async (uid: string) => {
+    const r = await confirm({ title: "Send notification", inputLabel: "Title", inputType: "text", inputPlaceholder: "Title...", reasonRequired: true, confirmLabel: "Send" });
+    if (!r.confirmed || !r.value) return;
+    await supabase.from("notifications").insert({ user_id: uid, title: r.value, body: r.reason ?? null });
+    await supabase.from("audit_logs").insert({ actor_id: me?.id, action: "notification_send", target_type: "user", target_id: uid, metadata: { title: r.value } });
+    toast.success("Sent");
   };
 
   const giveTokens = async (uid: string, current: number) => {
@@ -158,21 +173,64 @@ const UserManagement = () => {
       {detail && (
         <div onClick={() => setDetail(null)} className="fixed inset-0 z-[80] bg-black/70 backdrop-blur flex items-center justify-center p-4">
           <div onClick={(e) => e.stopPropagation()} className="glass-gold max-w-2xl w-full max-h-[85vh] overflow-y-auto p-6 rounded-2xl space-y-3">
-            <h3 className="text-2xl font-black gradient-gold-text">{detail.full_name}</h3>
+            <div className="flex items-center gap-3">
+              {detail.avatar_url ? <img src={detail.avatar_url} className="h-14 w-14 rounded-full object-cover" alt="" /> : <div className="h-14 w-14 rounded-full bg-secondary grid place-items-center font-bold">{(detail.full_name ?? "?").slice(0,2).toUpperCase()}</div>}
+              <div className="min-w-0 flex-1">
+                <h3 className="text-2xl font-black gradient-gold-text">{detail.full_name}</h3>
+                <div className="flex flex-wrap gap-1 mt-1">
+                  {detailExtra.roles.map((r) => <Badge key={r} variant="outline" className={ROLE_COLORS[r as AppRole]}>{ROLE_LABELS[r as AppRole]}</Badge>)}
+                  {detail.is_banned && <Badge variant="destructive">BANNED</Badge>}
+                  {detail.is_muted && <Badge variant="destructive">MUTED</Badge>}
+                  {detail.is_restricted && <Badge variant="destructive">RESTRICTED</Badge>}
+                </div>
+              </div>
+            </div>
             <div className="text-xs text-muted-foreground">{detail.email} · {detail.country ?? ""} · {detail.discord_username ?? ""} · {detail.phone ?? ""}</div>
             <div className="text-xs">Server: {detail.server} · Gang: {detail.gang_name ?? "—"} ({detail.gang_type ?? "—"})</div>
-            <div className="text-sm text-gold">Tokens: {detail.token_balance.toLocaleString()}</div>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-center">
+              <div className="glass p-2 rounded"><div className="text-[10px] text-muted-foreground">Tokens</div><div className="text-sm text-gold font-bold">{Number(detail.token_balance).toLocaleString()}</div></div>
+              <div className="glass p-2 rounded"><div className="text-[10px] text-muted-foreground">Bets</div><div className="text-sm font-bold">{detailBets.length}</div></div>
+              <div className="glass p-2 rounded"><div className="text-[10px] text-muted-foreground">Withdrawals</div><div className="text-sm font-bold">{detailExtra.withdrawals.length}</div></div>
+              <div className="glass p-2 rounded"><div className="text-[10px] text-muted-foreground">Tickets</div><div className="text-sm font-bold">{detailExtra.tickets.length}</div></div>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button size="sm" variant="outline" onClick={() => giveTokens(detail.id, detail.token_balance)}>± Tokens</Button>
+              <Button size="sm" variant="outline" onClick={() => sendUserNotif(detail.id)}><Send className="h-3 w-3 mr-1" />Notify</Button>
+              <Button size="sm" variant={detail.is_banned?"destructive":"outline"} onClick={() => setFlag(detail.id, "is_banned", !detail.is_banned, "ban_reason")}>{detail.is_banned ? "Unban" : "Ban"}</Button>
+              <Button size="sm" variant={detail.is_muted?"destructive":"outline"} onClick={() => setFlag(detail.id, "is_muted", !detail.is_muted, "mute_reason")}>{detail.is_muted ? "Unmute" : "Mute"}</Button>
+              <Button size="sm" variant={detail.is_restricted?"destructive":"outline"} onClick={() => setFlag(detail.id, "is_restricted", !detail.is_restricted, "restrict_reason")}>{detail.is_restricted ? "Unrestrict" : "Restrict"}</Button>
+            </div>
+            {(detail.ban_reason || detail.mute_reason || detail.restrict_reason) && (
+              <div className="glass p-2 rounded text-xs space-y-1">
+                {detail.ban_reason && <div><b className="text-red-400">Ban reason:</b> {detail.ban_reason}</div>}
+                {detail.mute_reason && <div><b className="text-red-400">Mute reason:</b> {detail.mute_reason}</div>}
+                {detail.restrict_reason && <div><b className="text-red-400">Restrict reason:</b> {detail.restrict_reason}</div>}
+              </div>
+            )}
             <div>
               <h4 className="font-bold text-sm mt-3">Bets ({detailBets.length})</h4>
-              {detailBets.map((b) => <div key={b.id} className="text-xs flex justify-between"><span className="font-mono">{b.tracking_id}</span><span>{b.status} · stake {b.stake} · payout {b.potential_payout}</span></div>)}
+              {detailBets.length === 0 ? <div className="text-xs text-muted-foreground">None</div> :
+                detailBets.slice(0,10).map((b) => <div key={b.id} className="text-xs flex justify-between"><span className="font-mono">{b.tracking_id}</span><span><Badge variant={b.status==='won'?'default':b.status==='lost'?'destructive':'outline'} className="mr-1">{b.status}</Badge>stake {Number(b.stake).toLocaleString()} · payout {Number(b.potential_payout).toLocaleString()}</span></div>)}
+            </div>
+            <div>
+              <h4 className="font-bold text-sm mt-3">Token Requests ({detailExtra.tokenReqs.length})</h4>
+              {detailExtra.tokenReqs.length === 0 ? <div className="text-xs text-muted-foreground">None</div> :
+                detailExtra.tokenReqs.map((r) => <div key={r.id} className="text-xs flex justify-between"><span>{new Date(r.created_at).toLocaleDateString()} · +{Number(r.amount).toLocaleString()}</span><Badge variant={r.status==='approved'?'default':r.status==='denied'?'destructive':'outline'}>{r.status}</Badge></div>)}
+            </div>
+            <div>
+              <h4 className="font-bold text-sm mt-3">Withdrawals ({detailExtra.withdrawals.length})</h4>
+              {detailExtra.withdrawals.length === 0 ? <div className="text-xs text-muted-foreground">None</div> :
+                detailExtra.withdrawals.map((w) => <div key={w.id} className="text-xs flex justify-between"><span>{new Date(w.created_at).toLocaleDateString()} · {Number(w.amount).toLocaleString()} → {w.in_game_name}</span><Badge variant={w.status==='approved'?'default':w.status==='declined'?'destructive':'outline'}>{w.status}</Badge></div>)}
             </div>
             <div>
               <h4 className="font-bold text-sm mt-3">Transactions ({detailTx.length})</h4>
-              {detailTx.map((t) => <div key={t.id} className="text-xs flex justify-between"><span>{new Date(t.created_at).toLocaleString()} · {t.description ?? t.kind}</span><span className={Number(t.amount)>0?"text-emerald-400":"text-red-400"}>{Number(t.amount)>0?"+":""}{t.amount}</span></div>)}
+              {detailTx.length === 0 ? <div className="text-xs text-muted-foreground">None</div> :
+                detailTx.slice(0,15).map((t) => <div key={t.id} className="text-xs flex justify-between"><span>{new Date(t.created_at).toLocaleString()} · {t.description ?? t.kind}</span><span className={Number(t.amount)>0?"text-emerald-400":"text-red-400"}>{Number(t.amount)>0?"+":""}{Number(t.amount).toLocaleString()}</span></div>)}
             </div>
             <div>
               <h4 className="font-bold text-sm mt-3">Audit ({detailLogs.length})</h4>
-              {detailLogs.map((l) => <div key={l.id} className="text-xs"><b className="text-gold">{l.action}</b> · {new Date(l.created_at).toLocaleString()}</div>)}
+              {detailLogs.length === 0 ? <div className="text-xs text-muted-foreground">None</div> :
+                detailLogs.slice(0,15).map((l) => <div key={l.id} className="text-xs"><b className="text-gold">{l.action.replace(/_/g," ")}</b> · {new Date(l.created_at).toLocaleString()}</div>)}
             </div>
             <Button onClick={() => setDetail(null)} className="btn-luxury w-full">Close</Button>
           </div>
@@ -191,6 +249,8 @@ const MatchBuilder = () => {
   const [newTeam, setNewTeam] = useState("");
   const [newTeamGang, setNewTeamGang] = useState<"G" | "F" | "">("");
   const [newTeamLogo, setNewTeamLogo] = useState<File | null>(null);
+  const [featured, setFeatured] = useState(false);
+  const [autoMarket, setAutoMarket] = useState(true);
 
   const load = async () => {
     const { data: t } = await supabase.from("teams").select("*").order("created_at", { ascending: false });
@@ -223,8 +283,30 @@ const MatchBuilder = () => {
   };
   const createMatch = async () => {
     if (!name || !home || !away || !start) return toast.error("Fill all fields");
-    await supabase.from("matches").insert({ name, home_team_id: home, away_team_id: away, location: loc, start_time: new Date(start).toISOString() });
-    setName(""); setLoc(""); setStart(""); await load(); toast.success("Match created");
+    if (home === away) return toast.error("Home and away must differ");
+    const { data: match, error } = await supabase
+      .from("matches")
+      .insert({ name, home_team_id: home, away_team_id: away, location: loc, start_time: new Date(start).toISOString(), is_featured: featured })
+      .select("id")
+      .single();
+    if (error || !match) return toast.error(error?.message ?? "Failed");
+    if (autoMarket) {
+      const homeName = teams.find((t) => t.id === home)?.name ?? "Home";
+      const awayName = teams.find((t) => t.id === away)?.name ?? "Away";
+      const { data: mkt } = await supabase.from("markets").insert({ match_id: match.id, name: "Match Winner" }).select("id").single();
+      if (mkt) {
+        await supabase.from("odds").insert([
+          { market_id: mkt.id, label: homeName, value: 2.0 },
+          { market_id: mkt.id, label: "Draw", value: 3.0 },
+          { market_id: mkt.id, label: awayName, value: 2.0 },
+        ]);
+      }
+    }
+    await supabase.from("audit_logs").insert({ action: "match_create", target_type: "match", target_id: match.id, metadata: { name, home, away, featured, auto_market: autoMarket } });
+    setName(""); setLoc(""); setStart(""); setFeatured(false); await load(); toast.success("Match created");
+  };
+  const toggleFeatured = async (m: any) => {
+    await supabase.from("matches").update({ is_featured: !m.is_featured }).eq("id", m.id); load();
   };
   const updateScore = async (id: string, h: number, a: number) => {
     await supabase.from("matches").update({ home_score: h, away_score: a }).eq("id", id); await load();
@@ -237,6 +319,7 @@ const MatchBuilder = () => {
     if (!r.confirmed) return;
     const winner = m.home_score > m.away_score ? m.home_team_id : m.away_score > m.home_score ? m.away_team_id : null;
     await supabase.from("matches").update({ status: "ended", winner_team_id: winner }).eq("id", m.id);
+    await supabase.from("audit_logs").insert({ action: "match_end", target_type: "match", target_id: m.id, metadata: { score: `${m.home_score}-${m.away_score}`, winner } });
     // Settle bets touching this match
     const { data: sels } = await supabase.from("bet_selections").select("bet_id, market_id, odd_id").eq("match_id", m.id);
     const betIds = [...new Set((sels ?? []).map((s: any) => s.bet_id))];
@@ -262,6 +345,7 @@ const MatchBuilder = () => {
     const r = await confirm({ title: "Delete match?", description: "Bet history is preserved; the match itself will be removed from listings.", destructive: true, reasonRequired: false, confirmLabel: "Delete" });
     if (!r.confirmed) return;
     await supabase.from("matches").delete().eq("id", m.id);
+    await supabase.from("audit_logs").insert({ action: "match_delete", target_type: "match", target_id: m.id, metadata: { name: m.name } });
     toast.success("Match deleted"); load();
   };
 
@@ -307,6 +391,10 @@ const MatchBuilder = () => {
         </div>
         <Input placeholder="Location" value={loc} onChange={(e) => setLoc(e.target.value)} />
         <Input type="datetime-local" value={start} onChange={(e) => setStart(e.target.value)} />
+        <div className="flex flex-wrap gap-4 text-xs">
+          <label className="flex items-center gap-2"><input type="checkbox" checked={featured} onChange={(e)=>setFeatured(e.target.checked)} />Mark as featured</label>
+          <label className="flex items-center gap-2"><input type="checkbox" checked={autoMarket} onChange={(e)=>setAutoMarket(e.target.checked)} />Auto-create 1X2 Match Winner market</label>
+        </div>
         <Button onClick={createMatch} className="btn-luxury">Create</Button>
       </Card>
       <div className="space-y-2">
@@ -325,6 +413,7 @@ const MatchBuilder = () => {
                 {m.status !== "ended" && <Button size="sm" variant="destructive" onClick={() => endMatch(m)}>End</Button>}
                 <Button size="sm" variant="outline" onClick={() => toggleAllOdds(m.id, true)}>Enable odds</Button>
                 <Button size="sm" variant="outline" onClick={() => toggleAllOdds(m.id, false)}><Lock className="h-3 w-3 mr-1" />Disable odds</Button>
+                <Button size="sm" variant={m.is_featured?"default":"outline"} onClick={() => toggleFeatured(m)}><Star className="h-3 w-3 mr-1" />{m.is_featured?"Featured":"Feature"}</Button>
                 {m.status === "ended" && <Button size="sm" variant="destructive" onClick={() => deleteMatch(m)}><Trash2 className="h-3 w-3" /></Button>}
                 <MarketsEditor matchId={m.id} />
               </div>
@@ -460,7 +549,17 @@ const TokenRequests = () => {
   const { user: me } = useAuth();
   const confirm = useConfirm();
   const [items, setItems] = useState<any[]>([]);
-  const load = () => supabase.from("token_requests").select("*,profile:profiles(full_name,email,token_balance)").order("created_at", { ascending: false }).then(({ data }) => setItems(data ?? []));
+  const [filter, setFilter] = useState<"pending" | "all" | "approved" | "denied">("pending");
+  const load = async () => {
+    const { data: rs } = await supabase.from("token_requests").select("*").order("created_at", { ascending: false });
+    const ids = [...new Set((rs ?? []).map((r: any) => r.user_id))];
+    const { data: ps } = ids.length
+      ? await supabase.from("profiles").select("id,full_name,email,token_balance,avatar_url").in("id", ids)
+      : { data: [] as any[] };
+    const map: Record<string, any> = {};
+    (ps ?? []).forEach((p: any) => { map[p.id] = p; });
+    setItems((rs ?? []).map((r: any) => ({ ...r, profile: map[r.user_id] ?? null })));
+  };
   useEffect(() => {
     load();
     const ch = supabase.channel("admin-tr").on("postgres_changes", { event: "*", schema: "public", table: "token_requests" }, load).subscribe();
@@ -483,20 +582,34 @@ const TokenRequests = () => {
     await supabase.from("audit_logs").insert({ actor_id: me?.id, action: approve ? "tokens_request_approve" : "tokens_request_deny", target_type: "user", target_id: r.user_id, metadata: { amount: r.amount, note } });
     load();
   };
+  const visible = items.filter((r) => filter === "all" || r.status === filter);
+  const counts = { pending: items.filter(i=>i.status==='pending').length, approved: items.filter(i=>i.status==='approved').length, denied: items.filter(i=>i.status==='denied').length };
   return (
     <div className="space-y-2">
-      {items.length === 0 && <p className="text-sm text-muted-foreground">No requests.</p>}
-      {items.map((r) => (
+      <div className="flex flex-wrap gap-2">
+        {(["pending","approved","denied","all"] as const).map((k) => (
+          <Button key={k} size="sm" variant={filter===k?"default":"outline"} onClick={()=>setFilter(k)}>
+            {k} {k!=="all" && <Badge variant="secondary" className="ml-2">{(counts as any)[k]}</Badge>}
+          </Button>
+        ))}
+      </div>
+      {visible.length === 0 && <p className="text-sm text-muted-foreground">No {filter} requests.</p>}
+      {visible.map((r) => (
         <Card key={r.id} className="glass p-3">
           <div className="flex justify-between flex-wrap gap-2">
-            <div>
-              <div className="font-bold">{r.profile?.full_name} · <span className="text-gold">+{r.amount}</span></div>
-              <div className="text-xs text-muted-foreground">{r.profile?.email} · {new Date(r.created_at).toLocaleString()}</div>
+            <div className="flex items-start gap-3 min-w-0">
+              {r.profile?.avatar_url ? <img src={r.profile.avatar_url} className="h-10 w-10 rounded-full object-cover" alt="" /> : <div className="h-10 w-10 rounded-full bg-secondary grid place-items-center text-xs">{(r.profile?.full_name ?? "?").slice(0,2).toUpperCase()}</div>}
+              <div className="min-w-0">
+                <div className="font-bold">{r.profile?.full_name ?? "Unknown user"} · <span className="text-gold">+{Number(r.amount).toLocaleString()}</span></div>
+                <div className="text-xs text-muted-foreground">{r.profile?.email} · current balance {Number(r.profile?.token_balance ?? 0).toLocaleString()}</div>
+                <div className="text-xs text-muted-foreground">{new Date(r.created_at).toLocaleString()}</div>
               {r.note && <div className="text-xs mt-1">{r.note}</div>}
+              {r.review_note && <div className="text-xs mt-1 italic">Review: "{r.review_note}"</div>}
               {r.proof_image_url && <a href={r.proof_image_url} target="_blank" rel="noreferrer"><img src={r.proof_image_url} className="mt-2 max-w-[140px] rounded" alt="" /></a>}
+              </div>
             </div>
             <div className="flex flex-col gap-1">
-              <Badge variant="outline">{r.status}</Badge>
+              <Badge variant={r.status==="approved"?"default":r.status==="denied"?"destructive":"outline"}>{r.status}</Badge>
               {r.status === "pending" && <>
                 <Button size="sm" onClick={() => decide(r, true)} className="btn-luxury">Approve</Button>
                 <Button size="sm" variant="destructive" onClick={() => decide(r, false)}>Deny</Button>
@@ -644,8 +757,25 @@ const Logs = () => {
     withdrawal_decline: "Withdrawal declined",
     notification_send: "Notification broadcast",
     emergency_wipe_all_tokens: "Emergency: all tokens wiped",
+    match_create: "Match created",
+    match_end: "Match ended & settled",
+    match_delete: "Match deleted",
+    promo_create: "Promo created",
+    promo_redeem: "Promo redeemed",
+    bet_place: "Bet placed",
+    bet_cashout: "Bet cashed out",
   };
-  const human = (a: string) => ACTION_LABELS[a] ?? a.replace(/_/g, " ");
+  const ACTION_COLOR: Record<string, string> = {
+    role_assign: "text-blue-400", role_remove: "text-amber-400",
+    is_banned_true: "text-red-400", is_muted_true: "text-red-400", is_restricted_true: "text-red-400",
+    is_banned_false: "text-emerald-400", is_muted_false: "text-emerald-400", is_restricted_false: "text-emerald-400",
+    tokens_request_approve: "text-emerald-400", tokens_request_deny: "text-red-400",
+    withdrawal_approve: "text-emerald-400", withdrawal_decline: "text-red-400",
+    emergency_wipe_all_tokens: "text-red-500",
+    match_create: "text-blue-400", match_end: "text-emerald-400", match_delete: "text-red-400",
+  };
+  const human = (a: string) => ACTION_LABELS[a] ?? a.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+  const colorOf = (a: string) => ACTION_COLOR[a] ?? "text-gold";
   const fmtMeta = (m: any) => {
     if (!m || typeof m !== "object") return null;
     return Object.entries(m).filter(([,v])=>v!==null && v!=="" ).map(([k,v]) => (
@@ -667,7 +797,7 @@ const Logs = () => {
             {filtered.map((l) => (
               <tr key={l.id} className="border-b border-border/40 hover:bg-secondary/30">
                 <td className="p-2 whitespace-nowrap text-muted-foreground">{new Date(l.created_at).toLocaleString()}</td>
-                <td className="p-2 font-bold text-gold">{human(l.action)}</td>
+                <td className={`p-2 font-bold ${colorOf(l.action)}`}>{human(l.action)}</td>
                 <td className="p-2">{profiles[l.actor_id] ?? "system"}</td>
                 <td className="p-2">{l.target_id ? `${l.target_type ?? ""} · ${profiles[l.target_id] ?? l.target_id?.slice(0,8)}` : "—"}</td>
                 <td className="p-2 text-muted-foreground">{fmtMeta(l.metadata)}</td>
@@ -856,7 +986,13 @@ const SupportTab = () => {
   const [open, setOpen] = useState<any | null>(null);
   const [msgs, setMsgs] = useState<any[]>([]);
   const [reply, setReply] = useState("");
-  const load = () => supabase.from("support_tickets").select("*,profile:profiles(full_name,email)").order("created_at", { ascending: false }).then(({ data }) => setTickets(data ?? []));
+  const load = async () => {
+    const { data: ts } = await supabase.from("support_tickets").select("*").order("created_at", { ascending: false });
+    const ids = [...new Set((ts ?? []).map((t: any) => t.user_id))];
+    const { data: ps } = ids.length ? await supabase.from("profiles").select("id,full_name,email").in("id", ids) : { data: [] as any[] };
+    const map: Record<string, any> = {}; (ps ?? []).forEach((p: any) => { map[p.id] = p; });
+    setTickets((ts ?? []).map((t: any) => ({ ...t, profile: map[t.user_id] ?? null })));
+  };
   useEffect(() => {
     load();
     const ch = supabase.channel("admin-support").on("postgres_changes", { event: "*", schema: "public", table: "support_tickets" }, load).subscribe();
@@ -931,7 +1067,14 @@ const WithdrawalsTab = () => {
   const { user: me } = useAuth();
   const confirm = useConfirm();
   const [items, setItems] = useState<any[]>([]);
-  const load = () => supabase.from("withdrawal_requests").select("*,profile:profiles(full_name,email,token_balance)").order("created_at", { ascending: false }).then(({ data }) => setItems(data ?? []));
+  const [filter, setFilter] = useState<"pending" | "all" | "approved" | "declined">("pending");
+  const load = async () => {
+    const { data: rs } = await supabase.from("withdrawal_requests").select("*").order("created_at", { ascending: false });
+    const ids = [...new Set((rs ?? []).map((r: any) => r.user_id))];
+    const { data: ps } = ids.length ? await supabase.from("profiles").select("id,full_name,email,token_balance,avatar_url").in("id", ids) : { data: [] as any[] };
+    const map: Record<string, any> = {}; (ps ?? []).forEach((p: any) => { map[p.id] = p; });
+    setItems((rs ?? []).map((r: any) => ({ ...r, profile: map[r.user_id] ?? null })));
+  };
   useEffect(() => {
     load();
     const ch = supabase.channel("admin-withdrawals").on("postgres_changes", { event: "*", schema: "public", table: "withdrawal_requests" }, load).subscribe();
@@ -968,10 +1111,19 @@ const WithdrawalsTab = () => {
     });
     load();
   };
+  const visible = items.filter((r) => filter === "all" || r.status === filter);
+  const counts = { pending: items.filter(i=>i.status==='pending').length, approved: items.filter(i=>i.status==='approved').length, declined: items.filter(i=>i.status==='declined').length };
   return (
     <div className="space-y-2">
-      {items.length === 0 && <p className="text-sm text-muted-foreground">No withdrawal requests.</p>}
-      {items.map((r) => (
+      <div className="flex flex-wrap gap-2">
+        {(["pending","approved","declined","all"] as const).map((k) => (
+          <Button key={k} size="sm" variant={filter===k?"default":"outline"} onClick={()=>setFilter(k)}>
+            {k} {k!=="all" && <Badge variant="secondary" className="ml-2">{(counts as any)[k]}</Badge>}
+          </Button>
+        ))}
+      </div>
+      {visible.length === 0 && <p className="text-sm text-muted-foreground">No {filter} withdrawal requests.</p>}
+      {visible.map((r) => (
         <Card key={r.id} className="glass p-3">
           <div className="flex justify-between flex-wrap gap-2">
             <div className="min-w-0">
